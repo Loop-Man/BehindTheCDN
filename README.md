@@ -1,2 +1,2 @@
 # BehindTheCDN
-Bypass CDN/WAF
+Script to find the IP address behind a CDN/WAF 
