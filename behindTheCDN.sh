@@ -14,18 +14,31 @@ turquoiseColour="\e[0;36m\033[1m"
 grayColour="\e[0;37m\033[1m"
 
 # Global variables
+## API variables
 declare -r VIRUSTOTAL_API_ID="" # Virustotal API Key (https://www.virustotal.com/gui/user/<username>/apikey)
 declare -r CENSYS_API_ID="" # Censys API ID (https://search.censys.io/account/api)
 declare -r CENSYS_API_SECRET="" # Censys API SECRET de censys aquí (https://search.censys.io/account/api)
 declare -r CENSYS_URL_API="https://search.censys.io/api"
 declare -r CENSYS_DOMAIN_API="search.censys.io"
+
+## Headers for the requests
+declare -r USER_AGENT="User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0"
+declare -r ACCEPT_HEADER='Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+declare -r ACCEPT_LANGUAGE='Accept-Language: en-US,en;q=0.5'
+declare -r CONNECTION_HEADER='Connection: keep-alive'
+## CDNs to check
+declare -r cdns=("akamai" "cloudflare" "maxcdn" "fastly" "amazonaws" "google" \
+        "level3" "verizon" "limelight" "incapsula" "stackpath" "cacheFly" \
+        "cdnetworks" "turbobytes" "highwinds" "chinacache" "azion" "belugacdn" \
+        "bunny" "cloudfront")
 FLAG_DOMAIN=false
 FLAG_INTENSIVE=false
 FLAG_CENSYS=false
 
 
 if [ ! "$VIRUSTOTAL_API_ID" ] || [ ! "$CENSYS_API_ID" ] || [ ! "$CENSYS_API_SECRET" ]; then
-	echo -e "\n${redColour}[!] You must enter your VirusTotal and Censys API Key into the code${endColour}\n"
+	echo -e "\n${redColour}[!] You must enter your VirusTotal and Censys API \
+Key into the code${endColour}\n"
 	exit 1
 fi
 
@@ -34,7 +47,8 @@ trap ctrl_c INT
 
 
 function ctrl_c(){
-    echo -e "\n\n${yellowColour}[*]${endColour}${grayColour} Exiting in a controlled way${endColour}\n"
+    echo -e "\n\n${yellowColour}[*]${endColour}${grayColour} Exiting in a \
+controlled way${endColour}\n"
     exit 0
 }
 
@@ -61,15 +75,18 @@ function helpPanel(){
 virustotal_AS_owner(){
 
     local IP="$1"
-    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/ip_addresses/$IP" --header "x-apikey: $VIRUSTOTAL_API_ID" > "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_report.json"
-    jq -r '.data.attributes.as_owner' "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_report.json" > "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_AS_owner.txt"
+    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/ip_addresses/$IP" \
+        --header "x-apikey: $VIRUSTOTAL_API_ID" > "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_report.json"
+    jq -r '.data.attributes.as_owner' "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_report.json" \
+        > "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_AS_owner.txt"
     cat "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_AS_owner.txt"
-}  
+}
 
 get_dns_a_records() {
 
     RESOLVER="8.8.8.8"
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} DNS A records of the $DOMAIN${endColour}\n"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} DNS A records of the \
+$DOMAIN${endColour}\n"
     dns_a_records=($(dig +short A "$DOMAIN" @"$RESOLVER"))
     for dns_a in "${dns_a_records[@]}"; do
         echo "$dns_a"
@@ -79,7 +96,8 @@ get_dns_a_records() {
 get_dns_a_records_and_AS_owner() {
 
     RESOLVER="8.8.8.8"
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} DNS A records of the $DOMAIN with owner of the Autonomous System ${endColour}\n"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} DNS A records of the \
+$DOMAIN with owner of the Autonomous System ${endColour}\n"
     dns_a_records=($(dig +short A "$DOMAIN" @"$RESOLVER"))
     for dns_a in "${dns_a_records[@]}"; do
         echo "$dns_a Autonomous System owner: $(virustotal_AS_owner $dns_a)"
@@ -89,29 +107,41 @@ get_dns_a_records_and_AS_owner() {
 
 virustotal_dns_history() {
 
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} History of DNS resolutions for the $DOMAIN${endColour}\n"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} History of DNS \
+resolutions for the $DOMAIN${endColour}\n"
    # echo "DOMAIN: $DOMAIN"
    # echo "LOCATION: $LOCATION"
-    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/resolutions?limit=40" --header "x-apikey: $VIRUSTOTAL_API_ID" > "$LOCATION/$DOMAIN/virustotal_resolutions.json"
-    jq -r '.data[].attributes.ip_address' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" > "$LOCATION/$DOMAIN/IP.txt"
-    cat "${LOCATION}/${DOMAIN}/IP.txt" | sort    
+    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/resolutions?limit=40" \
+        --header "x-apikey: $VIRUSTOTAL_API_ID" > "$LOCATION/$DOMAIN/virustotal_resolutions.json"
+    jq -r '.data[].attributes.ip_address' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" \
+        > "$LOCATION/$DOMAIN/IP.txt"
+    cat "${LOCATION}/${DOMAIN}/IP.txt" | sort
 }
 
 virustotal_dns_history_intensive() {
 
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Intensive collect DNS resolutions history for $DOMAIN${endColour}\n"
-    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/resolutions?limit=40" --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_resolutions.json"
-    jq -r '.data[].attributes.ip_address' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" > "${LOCATION}/${DOMAIN}/IP.txt"
-    jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Intensive collect \
+DNS resolutions history for $DOMAIN${endColour}\n"
+    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/resolutions?limit=40" \
+        --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_resolutions.json"
+    jq -r '.data[].attributes.ip_address' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" \
+        > "${LOCATION}/${DOMAIN}/IP.txt"
+    jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" \
+        > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
 
     while [ -s "${LOCATION}/${DOMAIN}/virustotal_url_next.txt" ]; do
-        curl -s -m 5 -k --request GET --url "$(cat "${LOCATION}/${DOMAIN}/virustotal_url_next.txt")" --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json"
-        jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json" > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
-        jq -r '.data[].attributes.ip_address' "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json" >> "${LOCATION}/${DOMAIN}/IP.txt"
+        curl -s -m 5 -k --request GET --url "$(cat "${LOCATION}/${DOMAIN}/virustotal_url_next.txt")" \
+            --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json"
+        jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json" \
+            > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
+        jq -r '.data[].attributes.ip_address' "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json" \
+            >> "${LOCATION}/${DOMAIN}/IP.txt"
 
         # Combine JSON files
-        jq -s '.[0].data + .[1].data | {data: .}' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json" > "${LOCATION}/${DOMAIN}/virustotal_resolutions_combined.json"
-        mv "${LOCATION}/${DOMAIN}/virustotal_resolutions_combined.json" "${LOCATION}/${DOMAIN}/virustotal_resolutions.json"
+        jq -s '.[0].data + .[1].data | {data: .}' "${LOCATION}/${DOMAIN}/virustotal_resolutions.json" \
+            "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json" > "${LOCATION}/${DOMAIN}/virustotal_resolutions_combined.json"
+        mv "${LOCATION}/${DOMAIN}/virustotal_resolutions_combined.json" \
+            "${LOCATION}/${DOMAIN}/virustotal_resolutions.json"
     done
     rm -rf "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
     rm -rf "${LOCATION}/${DOMAIN}/virustotal_resolutions_temp.json"
@@ -120,27 +150,40 @@ virustotal_dns_history_intensive() {
 
 virustotal_certificates_history() {
 
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Fingerprint sha256 of ssl certificates history in virustotal${endColour}\n"
-    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/historical_ssl_certificates?limit=40" --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json"
-    jq -r '.data[].attributes.thumbprint_sha256' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" > "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Fingerprint sha256 of \
+ssl certificates history in virustotal${endColour}\n"
+    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/historical_ssl_certificates?limit=40" \
+        --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json"
+    jq -r '.data[].attributes.thumbprint_sha256' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" \
+        > "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
     cat "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
 }
 
 virustotal_certificates_history_intensive() {
 
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Fingerprint sha256 of ssl certificates history in virustotal${endColour}\n"
-    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/historical_ssl_certificates?limit=40" --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json"
-    jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
-    jq -r '.data[].attributes.thumbprint_sha256' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" > "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
-    
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Fingerprint sha256 of \
+ssl certificates history in virustotal${endColour}\n"
+    curl -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/domains/$DOMAIN/historical_ssl_certificates?limit=40" \
+        --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json"
+    jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" \
+        > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
+    jq -r '.data[].attributes.thumbprint_sha256' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" \
+        > "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
+
     while [ -s "${LOCATION}/${DOMAIN}/virustotal_url_next.txt" ]; do
-        curl -s -m 5 -k --request GET --url "$(cat "${LOCATION}/${DOMAIN}/virustotal_url_next.txt")" --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json"
-        jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json" > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
-        jq -r '.data[].attributes.thumbprint_sha256' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json" >> "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
-        
+        curl -s -m 5 -k --request GET --url "$(cat "${LOCATION}/${DOMAIN}/virustotal_url_next.txt")" \
+            --header "x-apikey: $VIRUSTOTAL_API_ID" > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json"
+        jq -r '.links.next' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json" \
+            > "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
+        jq -r '.data[].attributes.thumbprint_sha256' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json" \
+            >> "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
+
         # Combine JSON files
-        jq -s '.[0].data + .[1].data | {data: .}' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json" > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_combined.json"
-        mv "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_combined.json" "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json"
+        jq -s '.[0].data + .[1].data | {data: .}' "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json" \
+            "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json" \
+            > "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_combined.json"
+        mv "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_combined.json" \
+            "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates.json"
     done
     rm -rf "${LOCATION}/${DOMAIN}/virustotal_url_next.txt"
     rm -rf "${LOCATION}/${DOMAIN}/virustotal_historical_ssl_certificates_temp.json"
@@ -162,21 +205,31 @@ virustotal_search_IP_by_subdomains(){
 
 censys_search_IP_by_certificates() {
 
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Fingerprint sha256 of ssl certificates history in censys${endColour}\n"
-    curl -s -X GET -H "Content-Type: application/json" -H "Host: $CENSYS_DOMAIN_API" -H "Referer: $CENSYS_URL_API" -u "$CENSYS_API_ID:$CENSYS_API_SECRET" --url "$CENSYS_URL_API/v2/certificates/search?q=$DOMAIN" | jq > "${LOCATION}/${DOMAIN}/censys_certificates.json"
-    jq -r '.result.hits | .[].fingerprint_sha256' "${LOCATION}/${DOMAIN}/censys_certificates.json" > "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Fingerprint sha256 of \
+ssl certificates history in censys${endColour}\n"
+    curl -s -X GET -H "Content-Type: application/json" -H "Host: $CENSYS_DOMAIN_API" \
+        -H "Referer: $CENSYS_URL_API" -u "$CENSYS_API_ID:$CENSYS_API_SECRET" \
+        --url "$CENSYS_URL_API/v2/certificates/search?q=$DOMAIN" \
+        | jq -r '.result.hits | .[].fingerprint_sha256' \
+        > "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
+
     if [ -z "$(cat "${LOCATION}/${DOMAIN}/sha256_certificates.txt")" ]; then
         echo -e "\n\t${redColour}[*]No certificates found in censys${endColour}\n"
     else
-        for sha256 in $(cat "${LOCATION}/${DOMAIN}/sha256_certificates.txt" | sort | uniq); do
-            curl -s -X GET -H "Content-Type: application/json" -H "Host: $CENSYS_DOMAIN_API" -H "Referer: $CENSYS_URL_API" -u "$CENSYS_API_ID:$CENSYS_API_SECRET" --url "$CENSYS_URL_API/v2/hosts/search?q=services.tls.certificates.leaf_data.fingerprint%3A+$sha256+or+services.tls.certificates.chain.fingerprint%3A+$sha256" | jq > "${LOCATION}/${DOMAIN}/censys_search_IP_by_certificates.tmp"
-            
-            cat "${LOCATION}/${DOMAIN}/censys_search_IP_by_certificates.tmp" >> "${LOCATION}/${DOMAIN}/censys_search_IP_by_certificates.json"
-            
-            jq -r '.result.hits | .[].ip' "${LOCATION}/${DOMAIN}/censys_search_IP_by_certificates.tmp" >> "${LOCATION}/${DOMAIN}/IP.txt"
+        for sha256 in $(cat "${LOCATION}/${DOMAIN}/sha256_certificates.txt" \
+            | sort | uniq); do
+            curl -s -X GET -H "Content-Type: application/json" \
+                -H "Host: $CENSYS_DOMAIN_API" -H "Referer: $CENSYS_URL_API" \
+                -u "$CENSYS_API_ID:$CENSYS_API_SECRET" \
+                --url "$CENSYS_URL_API/v2/hosts/search?q=services.tls.certificates.leaf_data.\
+                fingerprint%3A+$sha256+or+services.tls.certificates.chain.fingerprint%3A+$sha256" \
+                | jq -r '.result.hits | .[].ip' >> "${LOCATION}/${DOMAIN}/IP.txt"
         done
-        cat "${LOCATION}/${DOMAIN}/censys_search_IP_by_certificates.tmp"
-        rm -rf "${LOCATION}/${DOMAIN}/censys_search_IP_by_certificates.tmp"
+        if [ -z "$(cat "${LOCATION}/${DOMAIN}/IP.txt")" ]; then
+            echo -e "\n\t${redColour}[*]No IP found in censys for the certificates${endColour}\n"
+        else
+            cat "${LOCATION}/${DOMAIN}/IP.txt"
+        fi
     fi
 }
 
@@ -184,26 +237,35 @@ validation_lines(){
 
     if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
     then
-        echo -e "\n\t${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        echo -e "\n\t${redColour}[*]${endColour}${grayColour}The list of IP to \
+validate is empty${endColour}\n"
         exit 1
     else
-        curl -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
-        
-        #DEBUG 
+        curl -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
+
+        #DEBUG
         cat "$LOCATION/$DOMAIN/real_validation.txt" > "$LOCATION/$DOMAIN/.logs/real_html.html"
-        curl -L -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
+        curl -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
 
         echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects${endColour}\n"
         for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
         do
-            curl -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' --resolve *:443:$testIP https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation.txt"
-            
-            #DEBUG 
+            curl -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
+                > "$LOCATION/$DOMAIN/test_validation.txt"
+
+            #DEBUG
             cat "$LOCATION/$DOMAIN/test_validation.txt" > "$LOCATION/$DOMAIN/.logs/$testIP.html"
-            curl -L -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' --resolve *:443:$testIP https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
-            
-            difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" | grep -a -v ^@ | wc -l) 2> /dev/null
-            lines=$(cat "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" | wc -l) 2> /dev/null
+            curl -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
+                > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
+
+            difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
+                | grep -a -v ^@ | wc -l) 2> /dev/null
+            lines=$(cat "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
+                | wc -l) 2> /dev/null
             # Check if $lines is 0 and set it to 1
             if [ "$lines" -eq 0 ]; then
                 lines=1
@@ -227,12 +289,8 @@ validation_lines_test() {
         echo -e "\n\t${redColour}[*]${endColour}${grayColour} The list of IP to validate is empty.${endColour}\n"
         exit 1
     else
-        user_agent='User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0'
-        accept_header='Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-        accept_language='Accept-Language: en-US,en;q=0.5'
-        connection='Connection: keep-alive'
 
-        curl_opts=(-s -m 5 -k -X GET -H "$user_agent" -H "$accept_header" -H "$accept_language" -H "$connection")
+        curl_opts=(-s -m 5 -k -X GET -H ""$USER_AGENT"" -H ""$ACCEPT_HEADER"" -H ""$ACCEPT_LANGUAGE"" -H "$CONNECTION")
 
         curl "${curl_opts[@]}" "https://${DOMAIN}" > "${LOCATION}/${DOMAIN}/real_validation.txt"
 
@@ -282,20 +340,23 @@ similarity_percentage() {
 }
 
 validation_content() {
-    
+
     echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects${endColour}\n"
    # curl -L -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' --resolve *:443:$(dig +short A "$DOMAIN" @"$RESOLVER") https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
-    curl -L -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
+    curl -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
     local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation.txt")
-    
+
     #DEBUG
     echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request.txt"
-    
+
     for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
     do
-        curl -L -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' --resolve *:443:$testIP https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation.txt"
+        curl -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+            -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$testIP \
+            https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation.txt"
         local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation.txt")
-        
+
         #DEBUG
         echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP.txt" 
 
@@ -341,8 +402,9 @@ show_validated_ip(){
 
 show_validated_ip_and_AS_owner(){
 
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Valid IP set with owner of the Autonomous System to which the IP belongs${endColour}\n"
-    
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Valid IP set with \
+owner of the Autonomous System to which the IP belongs${endColour}\n"
+
     if [ -s "$LOCATION/$DOMAIN/IP_validate.txt" ]; then
 
         for IP_with_AS_owner in $(cat "$LOCATION/$DOMAIN/IP_validate.txt"); do
@@ -357,7 +419,6 @@ show_validated_ip_and_AS_owner(){
 cdn_validation_by_PTR_register(){
 
     # List of the names of the 20 most popular CDNs
-    local cdns=("akamai" "cloudflare" "maxcdn" "fastly" "amazonaws" "google" "level3" "verizon" "limelight" "incapsula" "stackpath" "cacheFly" "cdnetworks" "turbobytes" "highwinds" "chinacache" "azion" "belugacdn" "bunny" "cloudfront")
     local IP=$1
 
     # Perform a PTR lookup to get the associated host name
@@ -378,7 +439,6 @@ cdn_validation_by_PTR_register(){
 cdn_validation_by_whois(){
 
     # List of the names of the 20 most popular CDNs
-    local cdns=("akamai" "cloudflare" "maxcdn" "fastly" "amazonaws" "google" "level3" "verizon" "limelight" "incapsula" "stackpath" "cacheFly" "cdnetworks" "turbobytes" "highwinds" "chinacache" "azion" "belugacdn" "bunny" "cloudfront")
     local IP=$1
 
     # Perform a PTR lookup to get the associated host name
@@ -436,8 +496,8 @@ cdn_validation_by_headers_and_cookies_name(){
     )
 
     # Get http headers
-    headers=$(curl -L -sI -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' --resolve *:443:$IP https://$DOMAIN)
-    
+    headers=$(curl -L -sI -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$IP https://$DOMAIN)
 
     # Check error request
    # if [ $? -ne 0 ]; then
@@ -587,8 +647,9 @@ fi
 
 # Main logic
 
-# the domain is always mandatory, and then there are 4 options, one that is only domain, one that is intense, one that is censys and one with both.
-# It could be done with an If of the first and its two options inside then an else and the last option. 
+# the domain is always mandatory, and then there are 4 options, one that is only domain,
+# one that is intense, one that is censys and one with both.
+# It could be done with an If of the first and its two options inside then an else and the last option.
 # OPTION1
 if [ "$FLAG_INTENSIVE" = true ]; then
   if [ "$FLAG_CENSYS" = true ]; then
