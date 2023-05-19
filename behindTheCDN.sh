@@ -50,6 +50,7 @@ function helpPanel(){
     echo -e "\t -d DOMAIN: Search by DNS history"
     echo -e "\t -i: Search by DNS history, ssl certificate, subdomains"
     echo -e "\t -c: Search by Censys API"
+    echo -e "\t -f FILE: search by DNS history on every domain in the file"
     echo -e "\t -h: Print this message"
 }
 
@@ -220,7 +221,7 @@ validation_lines(){
     then
         echo -e "\n\t${redColour}[*]${endColour}${grayColour}The list of IP to \
 validate is empty${endColour}\n"
-        exit 1
+        #exit 1
     else
         curl -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
             -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
@@ -268,7 +269,7 @@ validate is empty${endColour}\n"
 validation_lines_test() {
     if [ ! -s "${LOCATION}/${DOMAIN}/IP.txt" ]; then
         echo -e "\n\t${redColour}[*]${endColour}${grayColour} The list of IP to validate is empty.${endColour}\n"
-        exit 1
+        #exit 1
     else
 
         curl_opts=(-s -m 5 -k -X GET -H ""$USER_AGENT"" -H ""$ACCEPT_HEADER"" -H ""$ACCEPT_LANGUAGE"" -H "$CONNECTION")
@@ -377,7 +378,7 @@ show_validated_ip(){
         cat "$LOCATION/$DOMAIN/IP_validate.txt"
     else
         echo -e "\n\t${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
-        exit 1
+        #exit 1
     fi
 } 
 
@@ -393,7 +394,7 @@ owner of the Autonomous System to which the IP belongs${endColour}\n"
         done
     else
         echo -e "\n\t${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
-        exit 1
+        #exit 1
     fi
 } 
 
@@ -573,7 +574,7 @@ flag_censys(){
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip
     cdn_validation
-} 
+}
 
 flag_all(){
     DOMAIN="$1"
@@ -596,13 +597,14 @@ FLAG_INTENSIVE=false
 FLAG_CENSYS=false
 VERBOSE=0
 
-while getopts ':d:ich?' option
+while getopts ':d:icf:h?' option
 do
     case "${option}"
         in
         d) DOMAIN=${OPTARG};;
         i) FLAG_INTENSIVE=true;;
         c) FLAG_CENSYS=true;;
+        f) DOM_FILE=${OPTARG};;
         v) VERBOSE=1;;
         h|?) banner ; helpPanel ; exit 0;;
         *) banner ; echo -e "\nUnknown flag: -$OPTARG\n" 1>&2 ; usage;;
@@ -610,44 +612,59 @@ do
 done
 
 # Process domain
-if [ -z "$DOMAIN" ] ; then
-    echo "No domain argument supplied with -d"
+echo "Domain: $DOMAIN"
+echo "File: $DOM_FILE"
+if [ -z "$DOMAIN" ] && [ -z "$DOM_FILE" ] ; then
+    echo "No domain(-d) or file(-f) argument supplied"
 	banner ; helpPanel
 	exit 1
 fi
 
-TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
-LOCATION=$(pwd)
+# Main function to execute the search
+function main_logic(){
 
-if [ ! -d "$DOMAIN" ];then
-    mkdir $DOMAIN
-fi
-if [ ! -d "$DOMAIN/.logs" ];then
-    mkdir "$DOMAIN/.logs"
-fi
+    TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
+    LOCATION=$(pwd)
 
-# Main logic
+    if [ ! -d "$DOMAIN" ];then
+        mkdir $DOMAIN
+    fi
+    if [ ! -d "$DOMAIN/.logs" ];then
+        mkdir "$DOMAIN/.logs"
+    fi
 
-# the domain is always mandatory, and then there are 4 options, one that is only domain,
-# one that is intense, one that is censys and one with both.
-# It could be done with an If of the first and its two options inside then an else and the last option.
-# OPTION1
-if [ "$FLAG_INTENSIVE" = true ]; then
-  if [ "$FLAG_CENSYS" = true ]; then
-   # echo "Executing Option 1 and Option 2"
-    flag_all "$DOMAIN" "$LOCATION"
-  else
-   # echo "Executing Option 1 only"
-    flag_intensive "$DOMAIN" "$LOCATION"
-  fi
+    # Main logic
+
+    # the domain is always mandatory, and then there are 4 options, one that is only domain,
+    # one that is intense, one that is censys and one with both.
+    # It could be done with an If of the first and its two options inside then an else and the last option.
+    # OPTION1
+    if [ "$FLAG_INTENSIVE" = true ]; then
+      if [ "$FLAG_CENSYS" = true ]; then
+       # echo "Executing Option 1 and Option 2"
+        flag_all "$DOMAIN" "$LOCATION"
+      else
+       # echo "Executing Option 1 only"
+        flag_intensive "$DOMAIN" "$LOCATION"
+      fi
+    else
+      if [ "$FLAG_CENSYS" = true ]; then
+       # echo "Executing Option 2 only"
+        flag_censys "$DOMAIN" "$LOCATION"
+      else
+       # echo "No options selected"
+        flag_domain "$DOMAIN" "$LOCATION"
+      fi
+    fi
+}
+
+if [ -n "$DOMAIN" ];then
+    main_logic $DOMAIN
 else
-  if [ "$FLAG_CENSYS" = true ]; then
-   # echo "Executing Option 2 only"
-    flag_censys "$DOMAIN" "$LOCATION"
-  else
-   # echo "No options selected"
-    flag_domain "$DOMAIN" "$LOCATION"
-  fi
+    echo $DOM_FILE
+    for DOMAIN in $(cat "$DOM_FILE"); do
+        main_logic $DOMAIN
+    done
 fi
 
 exit 0
