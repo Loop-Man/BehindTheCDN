@@ -13,27 +13,8 @@ purpleColour="\e[0;35m\033[1m"
 turquoiseColour="\e[0;36m\033[1m"
 grayColour="\e[0;37m\033[1m"
 
-# Global variables
-## API variables
-declare -r VIRUSTOTAL_API_ID="" # Virustotal API Key (https://www.virustotal.com/gui/user/<username>/apikey)
-declare -r CENSYS_API_ID="" # Censys API ID (https://search.censys.io/account/api)
-declare -r CENSYS_API_SECRET="" # Censys API SECRET de censys aquí (https://search.censys.io/account/api)
-declare -r CENSYS_URL_API="https://search.censys.io/api"
-declare -r CENSYS_DOMAIN_API="search.censys.io"
-
-## Headers for the requests
-declare -r USER_AGENT="User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0"
-declare -r ACCEPT_HEADER='Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-declare -r ACCEPT_LANGUAGE='Accept-Language: en-US,en;q=0.5'
-declare -r CONNECTION_HEADER='Connection: keep-alive'
-## CDNs to check
-declare -r cdns=("akamai" "cloudflare" "maxcdn" "fastly" "amazonaws" "google" \
-        "level3" "verizon" "limelight" "incapsula" "stackpath" "cacheFly" \
-        "cdnetworks" "turbobytes" "highwinds" "chinacache" "azion" "belugacdn" \
-        "bunny" "cloudfront")
-FLAG_DOMAIN=false
-FLAG_INTENSIVE=false
-FLAG_CENSYS=false
+# Source the Global Configuration with variables and API keys
+. global.conf
 
 
 if [ ! "$VIRUSTOTAL_API_ID" ] || [ ! "$CENSYS_API_ID" ] || [ ! "$CENSYS_API_SECRET" ]; then
