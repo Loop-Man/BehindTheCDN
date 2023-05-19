@@ -612,8 +612,6 @@ do
 done
 
 # Process domain
-echo "Domain: $DOMAIN"
-echo "File: $DOM_FILE"
 if [ -z "$DOMAIN" ] && [ -z "$DOM_FILE" ] ; then
     echo "No domain(-d) or file(-f) argument supplied"
 	banner ; helpPanel
