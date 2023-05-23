@@ -16,6 +16,9 @@ grayColour="\e[0;37m\033[1m"
 # Source the Global Configuration with variables and API keys
 . global.conf
 
+# File to store the results
+timestamp="$(date +%s)"
+results_file="results-$timestamp.txt"
 
 if [ ! "$VIRUSTOTAL_API_ID" ] || [ ! "$CENSYS_API_ID" ] || [ ! "$CENSYS_API_SECRET" ]; then
 	echo -e "\n${redColour}[!] You must enter your VirusTotal and Censys API \
@@ -502,6 +505,7 @@ cdn_validation_by_headers_and_cookies_name(){
         echo "$IP CDN detected: $detected_cdn"
     else
         echo -e "${greenColour}[!] $IP Potential CDN bypass${endColour}\n"
+        echo "$IP" >> $results_file
     fi
 
 }
@@ -621,6 +625,9 @@ fi
 # Main function to execute the search
 function main_logic(){
 
+    # Store the domain in the results file
+    echo "Bypass for: $DOMAIN" >> $results_file
+
     TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
     LOCATION=$(pwd)
 
@@ -654,12 +661,13 @@ function main_logic(){
         flag_domain "$DOMAIN" "$LOCATION"
       fi
     fi
+    echo "" >> $results_file
 }
+
 
 if [ -n "$DOMAIN" ];then
     main_logic $DOMAIN
 else
-    echo $DOM_FILE
     for DOMAIN in $(cat "$DOM_FILE"); do
         main_logic $DOMAIN
     done
