@@ -629,13 +629,17 @@ function main_logic(){
     echo "Bypass for: $DOMAIN" >> $results_file
 
     TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
-    LOCATION=$(pwd)
+    if [ ! -d scans ]; then
+        mkdir scans
+    fi
+    LOCATION="$(pwd)/scans"
+    SCAN_PATH="scans"
 
     if [ ! -d "$DOMAIN" ];then
-        mkdir $DOMAIN
+        mkdir "$SCAN_PATH/$DOMAIN"
     fi
     if [ ! -d "$DOMAIN/.logs" ];then
-        mkdir "$DOMAIN/.logs"
+        mkdir "$SCAN_PATH/$DOMAIN/.logs"
     fi
 
     # Main logic
