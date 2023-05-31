@@ -234,35 +234,37 @@ validate is empty${endColour}\n"
         curl -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
             -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
 
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects${endColour}\n"
-        for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-        do
-            curl -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
-                > "$LOCATION/$DOMAIN/test_validation.txt"
+        if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
+            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects${endColour}\n"
+            for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
+            do
+                curl -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
+                    > "$LOCATION/$DOMAIN/test_validation.txt"
 
-            #DEBUG
-            cat "$LOCATION/$DOMAIN/test_validation.txt" > "$LOCATION/$DOMAIN/.logs/$testIP.html"
-            curl -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
-                > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
+                #DEBUG
+                cat "$LOCATION/$DOMAIN/test_validation.txt" > "$LOCATION/$DOMAIN/.logs/$testIP.html"
+                curl -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
+                    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
 
-            difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
-                | grep -a -v ^@ | wc -l) 2> /dev/null
-            lines=$(cat "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
-                | wc -l) 2> /dev/null
-            # Check if $lines is 0 and set it to 1
-            if [ "$lines" -eq 0 ]; then
-                lines=1
-            fi
-            percent=$(((lines-difference)*100/lines))
-            percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative.
-            echo "$testIP Percentage: $percent%"
-            if (( $percent > 65 )); then
-                echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
-            fi
-        done
-        rm -rf "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt"
+                difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
+                    | grep -a -v ^@ | wc -l) 2> /dev/null
+                lines=$(cat "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
+                    | wc -l) 2> /dev/null
+                # Check if $lines is 0 and set it to 1
+                if [ "$lines" -eq 0 ]; then
+                    lines=1
+                fi
+                percent=$(((lines-difference)*100/lines))
+                percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative.
+                echo "$testIP Percentage: $percent%"
+                if (( $percent > 65 )); then
+                    echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+                fi
+            done
+            rm -rf "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt"
+        fi
     fi
 
 }
@@ -553,6 +555,7 @@ flag_intensive() {
     DOMAIN="$1"
     LOCATION="$2"
 
+    banner
     get_dns_a_records_and_AS_owner
     virustotal_dns_history_intensive
     virustotal_certificates_history_intensive  
@@ -568,6 +571,7 @@ flag_censys(){
     DOMAIN="$1"
     LOCATION="$2"
 
+    banner
     get_dns_a_records
     virustotal_dns_history
     virustotal_certificates_history
@@ -584,6 +588,7 @@ flag_all(){
     DOMAIN="$1"
     LOCATION="$2"
 
+    banner
     get_dns_a_records_and_AS_owner
     virustotal_dns_history_intensive
     virustotal_certificates_history_intensive
@@ -635,10 +640,10 @@ function main_logic(){
     LOCATION="$(pwd)/scans"
     SCAN_PATH="scans"
 
-    if [ ! -d "$DOMAIN" ];then
+    if [ ! -d "$LOCATION/$DOMAIN" ];then
         mkdir "$SCAN_PATH/$DOMAIN"
     fi
-    if [ ! -d "$DOMAIN/.logs" ];then
+    if [ ! -d "$LOCATION/$DOMAIN/.logs" ];then
         mkdir "$SCAN_PATH/$DOMAIN/.logs"
     fi
 
