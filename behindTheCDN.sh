@@ -196,7 +196,7 @@ ssl certificates history in censys${endColour}\n"
         > "${LOCATION}/${DOMAIN}/sha256_certificates.txt"
 
     if [ -z "$(cat "${LOCATION}/${DOMAIN}/sha256_certificates.txt")" ]; then
-        echo -e "\n\t${redColour}[*]No certificates found in censys${endColour}\n"
+        echo -e "\n${redColour}[*]No certificates found in censys${endColour}\n"
     else
         for sha256 in $(cat "${LOCATION}/${DOMAIN}/sha256_certificates.txt" \
             | sort | uniq); do
@@ -208,18 +208,18 @@ ssl certificates history in censys${endColour}\n"
                 | jq -r '.result.hits | .[].ip' >> "${LOCATION}/${DOMAIN}/IP.txt"
         done
         if [ -z "$(cat "${LOCATION}/${DOMAIN}/IP.txt")" ]; then
-            echo -e "\n\t${redColour}[*]No IP found in censys for the certificates${endColour}\n"
+            echo -e "\n${redColour}[*]No IP found in censys for the certificates${endColour}\n"
         else
             cat "${LOCATION}/${DOMAIN}/IP.txt"
         fi
     fi
 }
 
-validation_lines(){
+validation_lines_https(){
 
     if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
     then
-        echo -e "\n\t${redColour}[*]${endColour}${grayColour}The list of IP to \
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to \
 validate is empty${endColour}\n"
         #exit 1
     else
@@ -232,7 +232,7 @@ validate is empty${endColour}\n"
             -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
 
         if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
-            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects${endColour}\n"
+            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in https${endColour}\n"
             for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
             do
                 curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
@@ -260,43 +260,12 @@ validate is empty${endColour}\n"
                     echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
                 fi
             done
+            # DEBUG
             rm -rf "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt"
         fi
     fi
 
 }
-
-## Optimised version
-
-validation_lines_test() {
-    if [ ! -s "${LOCATION}/${DOMAIN}/IP.txt" ]; then
-        echo -e "\n\t${redColour}[*]${endColour}${grayColour} The list of IP to validate is empty.${endColour}\n"
-        #exit 1
-    else
-
-        curl_opts=(-s -m 5 -k -X GET -H ""$USER_AGENT"" -H ""$ACCEPT_HEADER"" -H ""$ACCEPT_LANGUAGE"" -H "$CONNECTION")
-
-        curl --retry 3 "${curl_opts[@]}" "https://${DOMAIN}" > "${LOCATION}/${DOMAIN}/real_validation.txt"
-
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects${endColour}\n"
-        while read -r testIP; do
-            curl --retry 3 "${curl_opts[@]}" --resolve "*:443:${testIP}" "https://${DOMAIN}" > "${LOCATION}/${DOMAIN}/test_validation.txt"
-
-            difference=$(diff -U 0 "${LOCATION}/${DOMAIN}/real_validation.txt" "${LOCATION}/${DOMAIN}/test_validation.txt" | grep -a -v ^@ | wc -l)
-            lines=$(cat "${LOCATION}/${DOMAIN}/real_validation.txt" "${LOCATION}/${DOMAIN}/test_validation.txt" | wc -l)
-            percent=$(((lines - difference) * 100 / lines))
-            percent=$((percent < 0 ? 0 : percent))
-
-            echo "$testIP Percentage: $percent%"
-            if ((percent > 65)); then
-                echo "$testIP" >> "${LOCATION}/${DOMAIN}/IP_validate.tmp"
-            fi
-        done < "${LOCATION}/${DOMAIN}/IP.txt"
-
-        rm -rf "${LOCATION}/${DOMAIN}/real_validation.txt" "${LOCATION}/${DOMAIN}/test_validation.txt"
-    fi
-}
-
 
 read_and_normalize_html() {
     local file_path=$1
@@ -323,7 +292,7 @@ similarity_percentage() {
     echo "$integer_similarity"
 }
 
-validation_content() {
+validation_content_https() {
 
    # curl --retry 3 -L -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' --resolve *:443:$(dig +short A "$DOMAIN" @"$RESOLVER") https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
     curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
@@ -334,7 +303,7 @@ validation_content() {
     echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request.txt"
 
     if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects${endColour}\n"
+        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in https${endColour}\n"
         for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
         do
             curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
@@ -351,6 +320,7 @@ validation_content() {
             fi
             echo "$testIP Similarity HTML content: $similarity%"
         done
+        #DEBUG
         rm -rf "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt"
     fi
 }
@@ -381,7 +351,7 @@ show_validated_ip(){
     if [ -s "$LOCATION/$DOMAIN/IP_validate.txt" ]; then
         cat "$LOCATION/$DOMAIN/IP_validate.txt"
     else
-        echo -e "\n\t${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
         #exit 1
     fi
 } 
@@ -397,7 +367,7 @@ owner of the Autonomous System to which the IP belongs${endColour}\n"
             echo "$IP_with_AS_owner Autonomous System owner: $(virustotal_AS_owner $IP_with_AS_owner)"
         done
     else
-        echo -e "\n\t${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
         #exit 1
     fi
 } 
@@ -450,82 +420,81 @@ cdn_validation_by_headers_and_cookies_name(){
         ["akamai"]="AKAMAICDN|AKAMAIEDGESERVERID|Server: AkamaiGHost|X-Akamai-Edgescape|X-Akamai-Request-ID"
         ["cloudfront"]="AWSALB|AWSALBCORS|Server: CloudFront|X-Amz-Cf-"
         ["cloudflare"]="__cfduid|__cfruid|Server: cloudflare|CF-RAY|cf-cache-status|CF-Cache-Status|CF-Connecting-IP"
-        ["fastly"]="_fastly_session|X-Served-By|X-Fastly-Request-ID"
+        ["fastly"]="_fastly_session|X-Fastly-Request-ID"
         ["imperva"]="incap_ses_|visid_incap_|X-CDN: Imperva|Imperva"
-        ["keycdn"]="X-Edge-Location|X-Cache-Key|Server: keycdn-engine|X-Edge-IP|X-Edge-Server"
-        ["sucuri"]="sucuri_cloudproxy_uuid_|X-Sucuri-ID|X-XSS-Protection: 1; mode=block; Sucuri|X-Sucuri-Cache|X-Content-Type-Options: nosniff; Sucuri"
-        ["stackpath"]="Server: StackPath|X-HW|X-Edge-Server"
+        ["keycdn"]="X-Edge-Location|Server: keycdn-engine|X-Edge-IP"
+        ["sucuri"]="sucuri_cloudproxy_uuid_|X-Sucuri-ID|X-Sucuri-Cache"
+        ["stackpath"]="Server: StackPath"
         ["limelight"]="Server: LLNW|X-Limelight-Edge-IP|X-Limelight-Edge-Hostname"
-        ["azureedge"]="Server: AzureEdge|X-Edge-Location|X-Azure-Ref"
+        ["azureedge"]="Server: AzureEdge|X-Azure-Ref"
         ["googleusercontent"]="Server: UploadServer|X-GUploader-UploadID|X-Goog-Upload-Status"
         ["rackspace"]="X-Cache-Hits"
         ["cachefly"]="Server: Flywheel|X-FLY-Region"
-        ["cdn77"]="Server: CDN77|X-Edge-Server|X-Edge-Location|X-Cache-Status"
-        ["cdnetworks"]="Server: CDNetworks|X-Daa-Tunnel|X-CDN|X-Edge-Server"
-        ["leaseweb"]="Server: LeaseWeb CDN|X-Edge-Server"
+        ["cdn77"]="Server: CDN77"
+        ["cdnetworks"]="Server: CDNetworks|X-Daa-Tunnel|X-CDN"
+        ["leaseweb"]="Server: LeaseWeb CDN"
         ["bunnycdn"]="Server: BunnyCDN|X-Bunny-Server|X-Bunny-Cache"
         ["gcorelabs"]="Server: G-Core Labs|X-GCore-RequestID|X-GCore-Server"
         ["quantil"]="Server: QUANTIL|X-CDN-Geo|X-CDN-Origin"
         ["belugacdn"]="Server: BelugaCDN|X-Beluga-Server|X-Beluga-Request-ID"
-        ["cdnvideo"]="Server: CDNvideo|X-Edge-Server|X-CDN-Location"
-        ["highwinds"]="Server: Highwinds|X-HW|X-Cache"
+        ["cdnvideo"]="Server: CDNvideo|X-CDN-Location"
+        ["highwinds"]="Server: Highwinds"
         ["chinacache"]="Server: ChinaCache|X-CC-Distributed"
-        ["edgecast"]="Server: ECD|X-Edge-Server"
+        ["edgecast"]="Server: ECD"
         ["aryaka"]="Server: Aryaka|X-Aryaka-Edge-Server"
-        ["onapp"]="Server: OnApp|X-Edge-Server"
+        ["onapp"]="Server: OnApp"
         ["cachenetworks"]="Server: CacheNetworks|X-CacheNetworks"
         ["metacdn"]="Server: MetaCDN|X-MetaCDN"
-        ["ngenix"]="Server: NGENIX|X-Edge-Server"
+        ["ngenix"]="Server: NGENIX"
         ["section.io"]="Server: section.io|X-Section-Id"
-        ["spacecdn"]="Server: SpaceCDN|X-Edge-Server"
+        ["spacecdn"]="Server: SpaceCDN"
     )
 
-   if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
-    # Get http headers
-       headers=$(curl --retry 3 -L -sI -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-            -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$IP https://$DOMAIN)
+# Get http headers
+    headers=$(curl --retry 3 -L -sI -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$IP https://$DOMAIN)
 
-       # Detect CDN
-       detected_cdn=""
-       for cdn in "${!cdn_patterns[@]}"; do
-           pattern=${cdn_patterns[$cdn]}
-           if echo "$headers" | grep -iqE "$pattern"; then
-               detected_cdn=$cdn
-               break
-           fi
-       done
+    # Detect CDN
+    detected_cdn=""
+    for cdn in "${!cdn_patterns[@]}"; do
+        pattern=${cdn_patterns[$cdn]}
+        if echo "$headers" | grep -iqE "$pattern"; then
+            detected_cdn=$cdn
+            break
+        fi
+    done
 
-       # Print the result
-       if [ -n "$detected_cdn" ]; then
-           echo "$IP CDN detected: $detected_cdn"
-       else
-           echo -e "${greenColour}[!] $IP Potential CDN bypass${endColour}\n"
-           echo "$IP" >> $results_file
-       fi
-   fi
+    # Print the result
+    if [ -n "$detected_cdn" ]; then
+        echo "$IP CDN detected: $detected_cdn"
+    else
+        echo -e "${greenColour}[!] $IP Potential CDN bypass${endColour}\n"
+        echo "$IP" >> $results_file
+    fi
 
 }
 
 cdn_validation(){
 
     echo -e "\n${yellowColour}[*]${endColour}${grayColour} Looking up the CDN${endColour}\n"
-    if [ -s "$LOCATION/$DOMAIN/IP_validate.txt" ]; then    
+    if [ -s "$LOCATION/$DOMAIN/IP_validate.txt" ]; then  
         for cdn_search in $(cat "$LOCATION/$DOMAIN/IP_validate.txt"); do
+            
             local cdn_validation_PTR=$(cdn_validation_by_PTR_register $cdn_search)
             if [[ -z "${cdn_validation_PTR}" ]]; then
-                local cdn_headers_validation=$(cdn_validation_by_headers_and_cookies_name $cdn_search)
-                if [[ -z "${cdn_headers_validation}" ]]; then
-                    local cdn_validation_whois=$(cdn_validation_by_whois $cdn_search)
-                    echo "$cdn_validation_whois"
-                else
+                local cdn_validation_whois=$(cdn_validation_by_whois $cdn_search)
+                if [[ -z "${cdn_validation_whois}" ]]; then
+                    local cdn_headers_validation=$(cdn_validation_by_headers_and_cookies_name $cdn_search)
                     echo "$cdn_headers_validation"
+                else
+                    echo "$cdn_validation_whois"
                 fi
             else
                 echo "$cdn_validation_PTR"
             fi
         done
     else
-        echo "The validated IP list is empty"
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
     fi
 }
 
@@ -537,8 +506,8 @@ flag_domain() {
     banner
     get_dns_a_records
     virustotal_dns_history
-    validation_lines
-    validation_content
+    validation_lines_https
+    validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip
@@ -553,8 +522,8 @@ flag_intensive() {
     get_dns_a_records_and_AS_owner
     virustotal_dns_history_intensive
     virustotal_certificates_history_intensive  
-    validation_lines
-    validation_content
+    validation_lines_https
+    validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip_and_AS_owner
@@ -570,8 +539,8 @@ flag_censys(){
     virustotal_dns_history
     virustotal_certificates_history
     censys_search_IP_by_certificates
-    validation_lines
-    validation_content
+    validation_lines_https
+    validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip
@@ -587,11 +556,11 @@ flag_all(){
     virustotal_dns_history_intensive
     virustotal_certificates_history_intensive
     censys_search_IP_by_certificates
-    validation_lines
-    validation_content
+    validation_lines_https
+    validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
-    show_validated_ip
+    show_validated_ip_and_AS_owner
     cdn_validation
 } 
 
@@ -684,28 +653,3 @@ else
 fi
 
 exit 0
-
-# OPTION2: As an easier to scale option to the future but more rare option, it can be done with a case.
-
-#case "$FLAG_INTENSIVE-$FLAG_CENSYS" in
-#  "true-true")
-#    echo "Executing true-true"
-#    flag_all "$DOMAIN" "$LOCATION"
-#    ;;
-#  "true-false")
-#    echo "Executing true-false"
-#    flag_intensive "$DOMAIN" "$LOCATION"
-#    ;;
-#  "false-true")
-#    echo "Executing false-true"
-#    flag_censys "$DOMAIN" "$LOCATION"
-#    ;;
-#  "false-false")
-#    echo "Executing false-false"
-#    flag_domain "$DOMAIN" "$LOCATION"
-#    ;;
-#  *)
-#    echo "No options selected or invalid combination"
-#    # Execute default function or handle error
-#    ;;
-#esac
