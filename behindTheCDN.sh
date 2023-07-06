@@ -215,6 +215,58 @@ ssl certificates history in censys${endColour}\n"
     fi
 }
 
+validation_lines_http(){
+
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
+    then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to \
+validate is empty${endColour}\n"
+        #exit 1
+    else
+        curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_http.txt"
+
+        #DEBUG
+        cat "$LOCATION/$DOMAIN/real_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/real_html_http.html"
+        curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect_http.html"
+
+        if [ -s "$LOCATION/$DOMAIN/real_validation_http.txt" ]; then
+            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in http${endColour}\n"
+            for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
+            do
+                curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
+                    > "$LOCATION/$DOMAIN/test_validation_http.txt"
+
+                #DEBUG
+                cat "$LOCATION/$DOMAIN/test_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/$testIP-http.html"
+                curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
+                    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect-http.html"
+
+                local difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt" \
+                    | grep -a -v ^@ | wc -l) 2> /dev/null
+                local lines=$(cat "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt" \
+                    | wc -l) 2> /dev/null
+                # Check if $lines is 0 and set it to 1
+                if [ "$lines" -eq 0 ]; then
+                    lines=1
+                fi
+                local percent=$(((lines-difference)*100/lines))
+                local percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative.
+                echo "$testIP Percentage: $percent%"
+                if (( $percent > 65 )); then
+                    echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+                fi
+            done
+            # DEBUG
+            rm -rf "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt"
+        fi
+    fi
+
+}
+
 validation_lines_https(){
 
     if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
@@ -292,27 +344,26 @@ similarity_percentage() {
     echo "$integer_similarity"
 }
 
-validation_content_https() {
+validation_content_http() {
 
-   # curl --retry 3 -L -s -m 5 -k -X GET -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Connection: keep-alive' --resolve *:443:$(dig +short A "$DOMAIN" @"$RESOLVER") https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
     curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
-    local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation.txt")
+        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_http.txt"
+    local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_http.txt")
 
     #DEBUG
-    echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request.txt"
+    echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_http.txt"
 
-    if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in https${endColour}\n"
+    if [ -s "$LOCATION/$DOMAIN/real_validation_content_http.txt" ]; then
+        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in http${endColour}\n"
         for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
         do
             curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-                -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$testIP \
-                https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation.txt"
-            local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation.txt")
+                -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:80:$testIP \
+                http://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_http.txt"
+            local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_http.txt")
 
             #DEBUG
-            echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP.txt" 
+            #echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP-http.txt"
 
             local similarity=$(similarity_percentage "$text1" "$text2")
             if [[ $similarity -gt 75 ]]; then
@@ -321,7 +372,39 @@ validation_content_https() {
             echo "$testIP Similarity HTML content: $similarity%"
         done
         #DEBUG
-        rm -rf "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt"
+        rm -rf "$LOCATION/$DOMAIN/real_validation_content_http.txt" "$LOCATION/$DOMAIN/test_validation_content_http.txt"
+    fi
+}
+
+validation_content_https() {
+
+    curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_https.txt"
+    local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_https.txt")
+
+    #DEBUG
+    #echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_https.txt"
+
+    if [ -s "$LOCATION/$DOMAIN/real_validation_content_https.txt" ]; then
+        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in https${endColour}\n"
+        for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
+        do
+            curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+                -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$testIP \
+                https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_https.txt"
+            local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_https.txt")
+
+            #DEBUG
+            #echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP.txt" 
+
+            local similarity=$(similarity_percentage "$text1" "$text2")
+            if [[ $similarity -gt 75 ]]; then
+                echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+            fi
+            echo "$testIP Similarity HTML content: $similarity%"
+        done
+        #DEBUG
+        rm -rf "$LOCATION/$DOMAIN/real_validation_content_https.txt" "$LOCATION/$DOMAIN/test_validation_content_https.txt"
     fi
 }
 
@@ -506,7 +589,9 @@ flag_domain() {
     banner
     get_dns_a_records
     virustotal_dns_history
+    validation_lines_http
     validation_lines_https
+    validation_content_http
     validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
@@ -521,8 +606,10 @@ flag_intensive() {
     banner
     get_dns_a_records_and_AS_owner
     virustotal_dns_history_intensive
-    virustotal_certificates_history_intensive  
+    virustotal_certificates_history_intensive
+    validation_lines_http  
     validation_lines_https
+    validation_content_http
     validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
@@ -539,7 +626,9 @@ flag_censys(){
     virustotal_dns_history
     virustotal_certificates_history
     censys_search_IP_by_certificates
+    validation_lines_http
     validation_lines_https
+    validation_content_http
     validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
@@ -556,7 +645,9 @@ flag_all(){
     virustotal_dns_history_intensive
     virustotal_certificates_history_intensive
     censys_search_IP_by_certificates
+    validation_lines_http
     validation_lines_https
+    validation_content_http
     validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
