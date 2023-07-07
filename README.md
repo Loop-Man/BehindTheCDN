@@ -1,6 +1,8 @@
 # BehindTheCDN
 Script to find the IP address behind a CDN/WAF  
 **IMPORTANT: The script make use of the API of VirusTotal and Censys, so you need those APIs**  
+VirusTotal API: https://www.virustotal.com/gui/user/<username>/apikey  
+Censys API: https://www.search.censys.io/account/api  
 
 # Prerequisites
 - bash
@@ -11,7 +13,7 @@ Script to find the IP address behind a CDN/WAF
 `git clone https://github.com/Loop-Man/BehindTheCDN` 
 
 # Configuration
-Set the APIs for virus total and Censys on the global.conf file 
+Set the APIs for virus total and Censys on the `API.conf` file 
 ```conf
 VIRUSTOTAL_API_ID="" 
 CENSYS_API_ID="" 
