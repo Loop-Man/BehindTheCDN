@@ -39,4 +39,4 @@ All options can be combined and use it at the same time
 `./behindCDN -f domains.txt -i -c`  
 
 # Results
-The script by default writes the output to a file with a timestamp in folder called `results`
+The script by default writes the output to a file with a timestamp in a folder called `results`
