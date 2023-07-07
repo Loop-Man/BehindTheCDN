@@ -1,6 +1,6 @@
 # BehindTheCDN
-Script to find the IP address behind a CDN/WAF 
-**IMPORTANT:** The script make use of the API of VirusTotal and Censys, so you need those APIs  
+Script to find the IP address behind a CDN/WAF  
+**IMPORTANT: The script make use of the API of VirusTotal and Censys, so you need those APIs**  
 
 # Prerequisites
 - bash
