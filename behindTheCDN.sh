@@ -15,6 +15,7 @@ grayColour="\e[0;37m\033[1m"
 
 # Source the Global Configuration with variables and API keys
 . global.conf
+. API.conf
 
 
 if [ ! "$VIRUSTOTAL_API_ID" ] || [ ! "$CENSYS_API_ID" ] || [ ! "$CENSYS_API_SECRET" ]; then
