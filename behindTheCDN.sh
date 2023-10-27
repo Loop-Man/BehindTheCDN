@@ -708,6 +708,14 @@ function main_logic(){
     if [ ! -d "$LOCATION/$DOMAIN/.logs" ];then
         mkdir "$SCAN_PATH/$DOMAIN/.logs"
     fi
+    
+    # If the domain does not have DNS resolution the script will jump the domain and continue with the next.
+    dns_a_records_check=$(dig +short A "$DOMAIN" @8.8.8.8)
+    if [ -z "$dns_a_records_check" ]; then
+    	banner
+    	echo -e "\n${redColour}[*]No resolution DNS found for $DOMAIN${endColour}\n"
+    	return
+    fi
 
     # Main logic
 
