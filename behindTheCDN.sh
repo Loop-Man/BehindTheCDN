@@ -228,9 +228,9 @@ validate is empty${endColour}\n"
             -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_http.txt"
 
         #DEBUG
-        cat "$LOCATION/$DOMAIN/real_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/real_html_http.html"
-        curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-            -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect_http.html"
+        #cat "$LOCATION/$DOMAIN/real_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/real_html_http.html"
+        #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+        #    -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect_http.html"
 
         if [ -s "$LOCATION/$DOMAIN/real_validation_http.txt" ]; then
             echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in http${endColour}\n"
@@ -241,10 +241,10 @@ validate is empty${endColour}\n"
                     > "$LOCATION/$DOMAIN/test_validation_http.txt"
 
                 #DEBUG
-                cat "$LOCATION/$DOMAIN/test_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/$testIP-http.html"
-                curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
-                    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect-http.html"
+                #cat "$LOCATION/$DOMAIN/test_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/$testIP-http.html"
+                #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                #    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
+                #    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect-http.html"
 
                 local difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt" \
                     | grep -a -v ^@ | wc -l) 2> /dev/null
@@ -280,9 +280,9 @@ validate is empty${endColour}\n"
             -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
 
         #DEBUG
-        cat "$LOCATION/$DOMAIN/real_validation.txt" > "$LOCATION/$DOMAIN/.logs/real_html.html"
-        curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-            -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
+        #cat "$LOCATION/$DOMAIN/real_validation.txt" > "$LOCATION/$DOMAIN/.logs/real_html.html"
+        #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+        #    -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
 
         if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
             echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in https${endColour}\n"
@@ -293,10 +293,10 @@ validate is empty${endColour}\n"
                     > "$LOCATION/$DOMAIN/test_validation.txt"
 
                 #DEBUG
-                cat "$LOCATION/$DOMAIN/test_validation.txt" > "$LOCATION/$DOMAIN/.logs/$testIP.html"
-                curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
-                    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
+                #cat "$LOCATION/$DOMAIN/test_validation.txt" > "$LOCATION/$DOMAIN/.logs/$testIP.html"
+                #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+                #    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
+                #    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
 
                 difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
                     | grep -a -v ^@ | wc -l) 2> /dev/null
@@ -347,18 +347,18 @@ similarity_percentage() {
 
 validation_content_http() {
 
-    curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+    curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
         -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_http.txt"
     local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_http.txt")
 
     #DEBUG
-    echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_http.txt"
+    #echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_http.txt"
 
     if [ -s "$LOCATION/$DOMAIN/real_validation_content_http.txt" ]; then
         echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in http${endColour}\n"
         for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
         do
-            curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+            curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
                 -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:80:$testIP \
                 http://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_http.txt"
             local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_http.txt")
@@ -379,7 +379,7 @@ validation_content_http() {
 
 validation_content_https() {
 
-    curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+    curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
         -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_https.txt"
     local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_https.txt")
 
@@ -390,7 +390,7 @@ validation_content_https() {
         echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in https${endColour}\n"
         for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
         do
-            curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
+            curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
                 -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$testIP \
                 https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_https.txt"
             local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_https.txt")
@@ -686,14 +686,14 @@ fi
 function main_logic(){
 
     # File to store the results
-    timestamp="$(date +%s)"
+    timestamp="$(date +%F)"
     if [ ! -d results ]; then
         mkdir results
     fi
-    results_file="results/results-$timestamp.txt"
+    results_file="results/results-$timestamp-$DOMAIN.txt"
 
     # Store the domain in the results file
-    echo "Bypass for: $DOMAIN" >> $results_file
+    echo "Potential CDN Bypass for: $DOMAIN" >> $results_file
 
     TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
     if [ ! -d scans ]; then
