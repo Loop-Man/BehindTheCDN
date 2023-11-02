@@ -216,108 +216,149 @@ ssl certificates history in censys${endColour}\n"
     fi
 }
 
-validation_lines_http(){
+validation_lines_http() {
+    
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local OUTPUT_DIR="$LOCATION/$DOMAIN/Validation_lines_http"
 
-    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
-    then
-        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to \
-validate is empty${endColour}\n"
-        #exit 1
-    else
-        curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-            -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_http.txt"
-
-        #DEBUG
-        #cat "$LOCATION/$DOMAIN/real_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/real_html_http.html"
-        #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-        #    -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect_http.html"
-
-        if [ -s "$LOCATION/$DOMAIN/real_validation_http.txt" ]; then
-            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in http${endColour}\n"
-            for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-            do
-                curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
-                    > "$LOCATION/$DOMAIN/test_validation_http.txt"
-
-                #DEBUG
-                #cat "$LOCATION/$DOMAIN/test_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/$testIP-http.html"
-                #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                #    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
-                #    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect-http.html"
-
-                local difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt" \
-                    | grep -a -v ^@ | wc -l) 2> /dev/null
-                local lines=$(cat "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt" \
-                    | wc -l) 2> /dev/null
-                # Check if $lines is 0 and set it to 1
-                if [ "$lines" -eq 0 ]; then
-                    lines=1
-                fi
-                local percent=$(((lines-difference)*100/lines))
-                local percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative.
-                echo "$testIP Percentage: $percent%"
-                if (( $percent > 65 )); then
-                    echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
-                fi
-            done
-            # DEBUG
-            rm -rf "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt"
-        fi
+    if [ ! -d "$OUTPUT_DIR" ];then
+        mkdir -p "$OUTPUT_DIR"
     fi
 
+    local real_validation_http=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+        -H "$CONNECTION_HEADER" http://$DOMAIN \
+        | tee "$OUTPUT_DIR/real_validation_http.html")
+
+    
+    # Check if the request is empty
+    
+    if [ -z "$real_validation_http" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTP validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
+
+
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line in HTTP${endColour}\n"
+
+    for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
+    do
+        local test_validation_http=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
+            | tee "$OUTPUT_DIR/test_validation_http_$testIP.html")
+
+        if [ -z "$test_validation_http" ]; then
+            echo "$testIP Percentage: 0%"
+            continue
+        fi
+
+        # Extract the title from the real validation
+        title1=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/real_validation_http.html")
+
+        # Extract the title from the current test validatin
+        title2=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/test_validation_http_$testIP.html")
+
+        # Check that both titles are not empty and are the same
+        if [[ -n "$title1" && -n "$title2" ]]; then
+            if [ "$title1" == "$title2" ]; then
+                echo "$testIP Percentage: 100%"
+                echo "$testIP" >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+                continue
+            fi
+        fi
+        
+
+        local difference=$(diff -U 0 <(echo "$real_validation_http") <(echo "$test_validation_http") | grep -a -v ^@ | wc -l) 2> /dev/null
+        local lines=$(echo -e "$real_validation_http\n$test_validation_http" | wc -l) 2> /dev/null
+
+        # Check if $lines is 0 and continue with the next iteration.
+        if [ "$lines" -eq 0 ]; then
+            echo "$testIP Percentage: Not Applicable%"
+            continue
+        fi
+        local percent=$(((lines-difference)*100/lines))
+        local percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative, and if it is put 0%
+        echo "$testIP Percentage: $percent%"
+        if (( $percent > 75 )); then
+            echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+        fi
+    done
+    # DEBUG
+    #rm -rf "$OUTPUT_DIR/real_validation_http.html" "$OUTPUT_DIR/test_validation_http_*"
 }
 
-validation_lines_https(){
+validation_lines_https() {
+    
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local OUTPUT_DIR="$LOCATION/$DOMAIN/Validation_lines_https"
 
-    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
-    then
-        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to \
-validate is empty${endColour}\n"
-        #exit 1
-    else
-        curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-            -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
-
-        #DEBUG
-        #cat "$LOCATION/$DOMAIN/real_validation.txt" > "$LOCATION/$DOMAIN/.logs/real_html.html"
-        #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-        #    -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
-
-        if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
-            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in https${endColour}\n"
-            for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-            do
-                curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
-                    > "$LOCATION/$DOMAIN/test_validation.txt"
-
-                #DEBUG
-                #cat "$LOCATION/$DOMAIN/test_validation.txt" > "$LOCATION/$DOMAIN/.logs/$testIP.html"
-                #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                #    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
-                #    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
-
-                difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
-                    | grep -a -v ^@ | wc -l) 2> /dev/null
-                lines=$(cat "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
-                    | wc -l) 2> /dev/null
-                # Check if $lines is 0 and set it to 1
-                if [ "$lines" -eq 0 ]; then
-                    lines=1
-                fi
-                percent=$(((lines-difference)*100/lines))
-                percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative.
-                echo "$testIP Percentage: $percent%"
-                if (( $percent > 65 )); then
-                    echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
-                fi
-            done
-            # DEBUG
-            rm -rf "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt"
-        fi
+    if [ ! -d "$OUTPUT_DIR" ];then
+        mkdir -p "$OUTPUT_DIR"
     fi
 
+    local real_validation_https=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+        -H "$CONNECTION_HEADER" https://$DOMAIN \
+        | tee "$OUTPUT_DIR/real_validation_https.html")
+
+    
+    # Check if the request is empty
+    
+    if [ -z "$real_validation_https" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTPS validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
+
+
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line in HTTPS${endColour}\n"
+
+    for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
+    do
+        local test_validation_https=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
+            | tee "$OUTPUT_DIR/test_validation_https_$testIP.html")
+
+        if [ -z "$test_validation_https" ]; then
+            echo "$testIP Percentage: 0%"
+            continue
+        fi
+
+        # Extract the title from the real validation
+        title1=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/real_validation_https.html")
+
+        # Extract the title from the current test validatin
+        title2=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/test_validation_https_$testIP.html")
+
+        # Check that both titles are not empty and are the same
+        if [[ -n "$title1" && -n "$title2" ]]; then
+            if [ "$title1" == "$title2" ]; then
+                echo "$testIP Percentage: 100%"
+                echo "$testIP" >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+                continue
+            fi
+        fi
+
+        local difference=$(diff -U 0 <(echo "$real_validation_https") <(echo "$test_validation_https") | grep -a -v ^@ | wc -l) 2> /dev/null
+        local lines=$(echo -e "$real_validation_https\n$test_validation_https" | wc -l) 2> /dev/null
+
+        # Check if $lines is 0 and continue with the next iteration.
+        if [ "$lines" -eq 0 ]; then
+            echo "$testIP Percentage: Not Applicable%"
+            continue
+        fi
+        local percent=$(((lines-difference)*100/lines))
+        local percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative, and if it is put 0%
+        echo "$testIP Percentage: $percent%"
+        if (( $percent > 75 )); then
+            echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+        fi
+    done
+    # DEBUG
+    #rm -rf "$OUTPUT_DIR/real_validation_https.html" "$OUTPUT_DIR/test_validation_https_*"
 }
 
 read_and_normalize_html() {
