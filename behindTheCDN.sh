@@ -222,13 +222,13 @@ validation_lines_http() {
         echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
         return 1
     fi
-    local OUTPUT_DIR="$LOCATION/$DOMAIN/Validation_lines_http"
+    local OUTPUT_DIR="$LOCATION/$DOMAIN/validation_http"
 
     if [ ! -d "$OUTPUT_DIR" ];then
         mkdir -p "$OUTPUT_DIR"
     fi
 
-    local real_validation_http=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+    local real_validation_http=$(curl --retry 3 -L -s -m 10 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
         -H "$CONNECTION_HEADER" http://$DOMAIN \
         | tee "$OUTPUT_DIR/real_validation_http.html")
 
@@ -260,9 +260,9 @@ validation_lines_http() {
         # Extract the title from the current test validatin
         title2=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/test_validation_http_$testIP.html")
 
-        # Check that both titles are not empty and are the same
+        # Check that both titles are not empty and the first title is contained in the second
         if [[ -n "$title1" && -n "$title2" ]]; then
-            if [ "$title1" == "$title2" ]; then
+            if [[ "$title2" == *"$title1"* ]]; then
                 echo "$testIP Percentage: 100%"
                 echo "$testIP" >> "$LOCATION/$DOMAIN/IP_validate.tmp"
                 continue
@@ -295,13 +295,13 @@ validation_lines_https() {
         echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
         return 1
     fi
-    local OUTPUT_DIR="$LOCATION/$DOMAIN/Validation_lines_https"
+    local OUTPUT_DIR="$LOCATION/$DOMAIN/validation_https"
 
     if [ ! -d "$OUTPUT_DIR" ];then
         mkdir -p "$OUTPUT_DIR"
     fi
 
-    local real_validation_https=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+    local real_validation_https=$(curl --retry 3 -L -s -m 10 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
         -H "$CONNECTION_HEADER" https://$DOMAIN \
         | tee "$OUTPUT_DIR/real_validation_https.html")
 
@@ -333,9 +333,9 @@ validation_lines_https() {
         # Extract the title from the current test validatin
         title2=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/test_validation_https_$testIP.html")
 
-        # Check that both titles are not empty and are the same
+        # Check that both titles are not empty and the first title is contained in the second
         if [[ -n "$title1" && -n "$title2" ]]; then
-            if [ "$title1" == "$title2" ]; then
+            if [[ "$title2" == *"$title1"* ]]; then
                 echo "$testIP Percentage: 100%"
                 echo "$testIP" >> "$LOCATION/$DOMAIN/IP_validate.tmp"
                 continue
@@ -388,66 +388,78 @@ similarity_percentage() {
 
 validation_content_http() {
 
-    curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_http.txt"
-    local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_http.txt")
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local INPUT_DIR="$LOCATION/$DOMAIN/validation_http"
 
-    #DEBUG
-    #echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_http.txt"
+    if [ ! -d "$INPUT_DIR" ];then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTP validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
 
-    if [ -s "$LOCATION/$DOMAIN/real_validation_content_http.txt" ]; then
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in http${endColour}\n"
-        for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-        do
-            curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-                -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:80:$testIP \
-                http://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_http.txt"
-            local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_http.txt")
+    local text1=$(read_and_normalize_html "$INPUT_DIR/real_validation_http.html" | tee "$INPUT_DIR/real_normalize_http.txt")
+    
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by HTLM content in HTTP${endColour}\n"
 
-            #DEBUG
-            #echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP-http.txt"
+    for file in "$INPUT_DIR"/test_validation_http_*.html
+    do
+        if [ -f "$file" ]; then
+            # Extrae la IP del nombre del archivo
+            filename=$(basename "$file")  # Obtiene solo el nombre del archivo, sin la ruta
+            local testIP=$(echo $filename | sed -E 's/test_validation_http_([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\.html/\1/')
+            local text2=$(read_and_normalize_html "$INPUT_DIR/$filename" | tee "$INPUT_DIR/test_normalize_http_$testIP.txt")
 
             local similarity=$(similarity_percentage "$text1" "$text2")
             if [[ $similarity -gt 75 ]]; then
                 echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
             fi
             echo "$testIP Similarity HTML content: $similarity%"
-        done
-        #DEBUG
-        rm -rf "$LOCATION/$DOMAIN/real_validation_content_http.txt" "$LOCATION/$DOMAIN/test_validation_content_http.txt"
-    fi
+
+        fi
+    done
+
+    #DEBUG
+    #rm -rf "$INPUT_DIR/real_normalize_http.txt" "$INPUT_DIR/test_normalize_http_*"
 }
 
 validation_content_https() {
 
-    curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_https.txt"
-    local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_https.txt")
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local INPUT_DIR="$LOCATION/$DOMAIN/validation_https"
 
-    #DEBUG
-    #echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_https.txt"
+    if [ ! -d "$INPUT_DIR" ];then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTPS validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
 
-    if [ -s "$LOCATION/$DOMAIN/real_validation_content_https.txt" ]; then
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in https${endColour}\n"
-        for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-        do
-            curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-                -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$testIP \
-                https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_https.txt"
-            local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_https.txt")
+    local text1=$(read_and_normalize_html "$INPUT_DIR/real_validation_https.html" | tee "$INPUT_DIR/real_normalize_https.txt")
+    
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by HTLM content in HTTPS${endColour}\n"
 
-            #DEBUG
-            #echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP.txt" 
+    for file in "$INPUT_DIR"/test_validation_https_*.html
+    do
+        if [ -f "$file" ]; then
+            # Extrae la IP del nombre del archivo
+            filename=$(basename "$file")  # Obtiene solo el nombre del archivo, sin la ruta
+            local testIP=$(echo $filename | sed -E 's/test_validation_https_([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\.html/\1/')
+            local text2=$(read_and_normalize_html "$INPUT_DIR/$filename" | tee "$INPUT_DIR/test_normalize_https_$testIP.txt")
 
             local similarity=$(similarity_percentage "$text1" "$text2")
             if [[ $similarity -gt 75 ]]; then
                 echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
             fi
             echo "$testIP Similarity HTML content: $similarity%"
-        done
-        #DEBUG
-        rm -rf "$LOCATION/$DOMAIN/real_validation_content_https.txt" "$LOCATION/$DOMAIN/test_validation_content_https.txt"
-    fi
+
+        fi
+    done
+
+    #DEBUG
+    #rm -rf "$INPUT_DIR/real_normalize_https.txt" "$INPUT_DIR/test_normalize_https_*"
 }
 
 sort_and_uniq_IP_file(){
