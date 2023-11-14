@@ -16,9 +16,10 @@ Script to find the IP address behind a CDN/WAF
 # Configuration
 Set the APIs for virus total and Censys on the `API.conf` file 
 ```conf
-VIRUSTOTAL_API_ID="" 
-CENSYS_API_ID="" 
-CENSYS_API_SECRET="" 
+VIRUSTOTAL_API_ID="" # Virustotal API Key (https://www.virustotal.com/gui/user/<username>/apikey)
+CENSYS_API_ID="" # Censys API ID (https://search.censys.io/account/api)
+CENSYS_API_SECRET="" # Censys API SECRET de censys aquí (https://search.censys.io/account/api)
+SHODAN_API="" # Shodan API key (https://developer.shodan.io/api/requirements)
 ```
 
 # Use
