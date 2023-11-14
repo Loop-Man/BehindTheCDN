@@ -20,7 +20,7 @@ grayColour="\e[0;37m\033[1m"
 
 if [ ! "$VIRUSTOTAL_API_ID" ] || [ ! "$CENSYS_API_ID" ] || [ ! "$CENSYS_API_SECRET" ]; then
 	echo -e "\n${redColour}[!] You must enter your VirusTotal and Censys API \
-Key into the code${endColour}\n"
+Key into API.conf file.${endColour}\n"
 	exit 1
 fi
 
@@ -42,6 +42,8 @@ function banner(){
     echo -e "  / __ \/ _ \/ __ \/ / __ \/ __  / / / / __ \/ _ \/ /   / / / /  |/ / ";
     echo -e " / /_/ /  __/ / / / / / / / /_/ / / / / / / /  __/ /___/ /_/ / /|  /  ";
     echo -e "/_.___/\___/_/ /_/_/_/ /_/\__,_/ /_/ /_/ /_/\___/\____/_____/_/ |_/   ";
+    echo -e "                                                                      ";
+    echo -e "By Manuel López aka Loop-Man                                          ";
     echo -e "                                                                      ${endColour}\n";
 
 }
@@ -52,17 +54,20 @@ function helpPanel(){
     echo -e "\t -i: Search by DNS history, ssl certificate, subdomains"
     echo -e "\t -c: Search by Censys API"
     echo -e "\t -f FILE: search by DNS history on every domain in the file"
+    echo -e "\t -o output.txt: Save the execution of the script to a file"
     echo -e "\t -h: Print this message"
 }
+
+################ API PART ###############################################################################
 
 virustotal_AS_owner(){
 
     local IP="$1"
     curl --retry 3 -s -m 5 -k --request GET --url "https://www.virustotal.com/api/v3/ip_addresses/$IP" \
-        --header "x-apikey: $VIRUSTOTAL_API_ID" > "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_report.json"
-    jq -r '.data.attributes.as_owner' "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_report.json" \
-        > "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_AS_owner.txt"
-    cat "$LOCATION/$DOMAIN/.logs/${IP}_virustotal_AS_owner.txt"
+        --header "x-apikey: $VIRUSTOTAL_API_ID" > "$LOCATION/$DOMAIN/${IP}_virustotal_report.json"
+    jq -r '.data.attributes.as_owner' "$LOCATION/$DOMAIN/${IP}_virustotal_report.json" \
+        > "$LOCATION/$DOMAIN/${IP}_virustotal_AS_owner.txt"
+    cat "$LOCATION/$DOMAIN/${IP}_virustotal_AS_owner.txt"
 }
 
 get_dns_a_records() {
@@ -188,8 +193,8 @@ virustotal_search_IP_by_subdomains(){
 
 censys_search_IP_by_certificates() {
 
-    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Fingerprint sha256 of \
-ssl certificates history in censys${endColour}\n"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Searching for IPs under sha256 hashes of \
+certificates with CN=$DOMAIN${endColour}\n"
     curl --retry 3 -s -X GET -H "Content-Type: application/json" -H "Host: $CENSYS_DOMAIN_API" \
         -H "Referer: $CENSYS_URL_API" -u "$CENSYS_API_ID:$CENSYS_API_SECRET" \
         --url "$CENSYS_URL_API/v2/certificates/search?q=$DOMAIN" \
@@ -216,108 +221,182 @@ ssl certificates history in censys${endColour}\n"
     fi
 }
 
-validation_lines_http(){
+shodan_search_IP_by_domain() {
 
-    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
-    then
-        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to \
-validate is empty${endColour}\n"
-        #exit 1
-    else
-        curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-            -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_http.txt"
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} Searching for the $DOMAIN domain in shodan${endColour}\n"
 
-        #DEBUG
-        #cat "$LOCATION/$DOMAIN/real_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/real_html_http.html"
-        #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-        #    -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect_http.html"
-
-        if [ -s "$LOCATION/$DOMAIN/real_validation_http.txt" ]; then
-            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in http${endColour}\n"
-            for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-            do
-                curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
-                    > "$LOCATION/$DOMAIN/test_validation_http.txt"
-
-                #DEBUG
-                #cat "$LOCATION/$DOMAIN/test_validation_http.txt" > "$LOCATION/$DOMAIN/.logs/$testIP-http.html"
-                #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                #    -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
-                #    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect-http.html"
-
-                local difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt" \
-                    | grep -a -v ^@ | wc -l) 2> /dev/null
-                local lines=$(cat "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt" \
-                    | wc -l) 2> /dev/null
-                # Check if $lines is 0 and set it to 1
-                if [ "$lines" -eq 0 ]; then
-                    lines=1
-                fi
-                local percent=$(((lines-difference)*100/lines))
-                local percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative.
-                echo "$testIP Percentage: $percent%"
-                if (( $percent > 65 )); then
-                    echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
-                fi
-            done
-            # DEBUG
-            rm -rf "$LOCATION/$DOMAIN/real_validation_http.txt" "$LOCATION/$DOMAIN/test_validation_http.txt"
-        fi
+    if [ ! "$SHODAN_API" ]; then
+        echo -e "\n${redColour}[!] You must enter your Shodan API Key into the API.conf file${endColour}\n"
+        return 1
     fi
 
+    #local request=$(curl --retry 1 -s -m 10 -X GET -H "Content-Type: application/json" -H "Host: $SHODAN_DOMAIN_API" \
+    #    -H "Referer: $SHODAN_URL_API" --url "$SHODAN_URL_API/shodan/host/search?key=$SHODAN_API&query=hostname:$DOMAIN" \
+    #    | jq | tee "${LOCATION}/${DOMAIN}/shodan_search_domain.json")
+
+    local request=$(curl --retry 1 -s -m 10 -X GET -H "Content-Type: application/json" -H "Host: $SHODAN_DOMAIN_API" \
+        -H "Referer: $SHODAN_URL_API" --url "$SHODAN_URL_API/shodan/host/search?key=$SHODAN_API&query=$DOMAIN" \
+        | jq | tee "${LOCATION}/${DOMAIN}/shodan_search_domain.json")
+
+    local testIP=$(jq -r '.matches[] | select(.ip_str | test("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$")) | .ip_str' "${LOCATION}/${DOMAIN}/shodan_search_domain.json" | sort | uniq)
+
+    if [ -z "$testIP" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour} No information has been found in shodan for the domain $DOMAIN ${endColour}\n"
+        return 1
+
+    else
+        echo "$testIP" >> "$LOCATION/$DOMAIN/IP.txt"
+
+    fi
+
+    echo "$testIP"
 }
 
-validation_lines_https(){
+################ VALIDATION IP PART ###############################################################################
 
-    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]
-    then
-        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to \
-validate is empty${endColour}\n"
-        #exit 1
-    else
-        curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-            -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation.txt"
+validation_lines_http() {
+    
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local OUTPUT_DIR="$LOCATION/$DOMAIN/validation_http"
 
-        #DEBUG
-        #cat "$LOCATION/$DOMAIN/real_validation.txt" > "$LOCATION/$DOMAIN/.logs/real_html.html"
-        #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-        #    -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/.logs/real_html_with_redirect.html"
-
-        if [ -s "$LOCATION/$DOMAIN/real_validation.txt" ]; then
-            echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line without redirects in https${endColour}\n"
-            for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-            do
-                curl --retry 3 -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
-                    > "$LOCATION/$DOMAIN/test_validation.txt"
-
-                #DEBUG
-                #cat "$LOCATION/$DOMAIN/test_validation.txt" > "$LOCATION/$DOMAIN/.logs/$testIP.html"
-                #curl --retry 3 -L -s -m 5 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
-                #    -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
-                #    > "$LOCATION/$DOMAIN/.logs/$testIP-with-redirect.html"
-
-                difference=$(diff -U 0 "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
-                    | grep -a -v ^@ | wc -l) 2> /dev/null
-                lines=$(cat "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt" \
-                    | wc -l) 2> /dev/null
-                # Check if $lines is 0 and set it to 1
-                if [ "$lines" -eq 0 ]; then
-                    lines=1
-                fi
-                percent=$(((lines-difference)*100/lines))
-                percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative.
-                echo "$testIP Percentage: $percent%"
-                if (( $percent > 65 )); then
-                    echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
-                fi
-            done
-            # DEBUG
-            rm -rf "$LOCATION/$DOMAIN/real_validation.txt" "$LOCATION/$DOMAIN/test_validation.txt"
-        fi
+    if [ ! -d "$OUTPUT_DIR" ];then
+        mkdir -p "$OUTPUT_DIR"
     fi
 
+    local real_validation_http=$(curl --retry 3 -L -s -m 10 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+        -H "$CONNECTION_HEADER" http://$DOMAIN \
+        | tee "$OUTPUT_DIR/real_validation_http.html")
+
+    
+    # Check if the request is empty
+    
+    if [ -z "$real_validation_http" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTP validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
+
+
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line in HTTP${endColour}\n"
+
+    for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
+    do
+        local test_validation_http=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" --resolve *:80:$testIP http://$DOMAIN \
+            | tee "$OUTPUT_DIR/test_validation_http_$testIP.html")
+
+        if [ -z "$test_validation_http" ]; then
+            echo "$testIP Percentage: 0%"
+            continue
+        fi
+
+        # Extract the title from the real validation
+        title1=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/real_validation_http.html")
+
+        # Extract the title from the current test validatin
+        title2=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/test_validation_http_$testIP.html")
+
+        # Check that both titles are not empty and the first title is contained in the second
+        if [[ -n "$title1" && -n "$title2" ]]; then
+            if [[ "$title2" == *"$title1"* ]]; then
+                echo "$testIP Percentage: 100%"
+                echo "$testIP" >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+                continue
+            fi
+        fi
+        
+
+        local difference=$(diff -U 0 <(echo "$real_validation_http") <(echo "$test_validation_http") | grep -a -v ^@ | wc -l) 2> /dev/null
+        local lines=$(echo -e "$real_validation_http\n$test_validation_http" | wc -l) 2> /dev/null
+
+        # Check if $lines is 0 and continue with the next iteration.
+        if [ "$lines" -eq 0 ]; then
+            echo "$testIP Percentage: Not Applicable%"
+            continue
+        fi
+        local percent=$(((lines-difference)*100/lines))
+        local percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative, and if it is put 0%
+        echo "$testIP Percentage: $percent%"
+        if (( $percent > 75 )); then
+            echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+        fi
+    done
+    # DEBUG
+    #rm -rf "$OUTPUT_DIR/real_validation_http.html" "$OUTPUT_DIR/test_validation_http_*"
+}
+
+validation_lines_https() {
+    
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local OUTPUT_DIR="$LOCATION/$DOMAIN/validation_https"
+
+    if [ ! -d "$OUTPUT_DIR" ];then
+        mkdir -p "$OUTPUT_DIR"
+    fi
+
+    local real_validation_https=$(curl --retry 3 -L -s -m 10 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+        -H "$CONNECTION_HEADER" https://$DOMAIN \
+        | tee "$OUTPUT_DIR/real_validation_https.html")
+
+    
+    # Check if the request is empty
+    
+    if [ -z "$real_validation_https" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTPS validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
+
+
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation per line in HTTPS${endColour}\n"
+
+    for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
+    do
+        local test_validation_https=$(curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" -H "$ACCEPT_LANGUAGE" \
+            -H "$CONNECTION_HEADER" --resolve *:443:$testIP https://$DOMAIN \
+            | tee "$OUTPUT_DIR/test_validation_https_$testIP.html")
+
+        if [ -z "$test_validation_https" ]; then
+            echo "$testIP Percentage: 0%"
+            continue
+        fi
+
+        # Extract the title from the real validation
+        title1=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/real_validation_https.html")
+
+        # Extract the title from the current test validatin
+        title2=$(grep -oP '(?<=<title>).*?(?=</title>)' "$OUTPUT_DIR/test_validation_https_$testIP.html")
+
+        # Check that both titles are not empty and the first title is contained in the second
+        if [[ -n "$title1" && -n "$title2" ]]; then
+            if [[ "$title2" == *"$title1"* ]]; then
+                echo "$testIP Percentage: 100%"
+                echo "$testIP" >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+                continue
+            fi
+        fi
+
+        local difference=$(diff -U 0 <(echo "$real_validation_https") <(echo "$test_validation_https") | grep -a -v ^@ | wc -l) 2> /dev/null
+        local lines=$(echo -e "$real_validation_https\n$test_validation_https" | wc -l) 2> /dev/null
+
+        # Check if $lines is 0 and continue with the next iteration.
+        if [ "$lines" -eq 0 ]; then
+            echo "$testIP Percentage: Not Applicable%"
+            continue
+        fi
+        local percent=$(((lines-difference)*100/lines))
+        local percent=$(( percent < 0 ? 0 : percent )) # Ensure that the percentage is not negative, and if it is put 0%
+        echo "$testIP Percentage: $percent%"
+        if (( $percent > 75 )); then
+            echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
+        fi
+    done
+    # DEBUG
+    #rm -rf "$OUTPUT_DIR/real_validation_https.html" "$OUTPUT_DIR/test_validation_https_*"
 }
 
 read_and_normalize_html() {
@@ -347,66 +426,78 @@ similarity_percentage() {
 
 validation_content_http() {
 
-    curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" http://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_http.txt"
-    local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_http.txt")
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local INPUT_DIR="$LOCATION/$DOMAIN/validation_http"
 
-    #DEBUG
-    #echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_http.txt"
+    if [ ! -d "$INPUT_DIR" ];then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTP validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
 
-    if [ -s "$LOCATION/$DOMAIN/real_validation_content_http.txt" ]; then
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in http${endColour}\n"
-        for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-        do
-            curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-                -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:80:$testIP \
-                http://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_http.txt"
-            local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_http.txt")
+    local text1=$(read_and_normalize_html "$INPUT_DIR/real_validation_http.html" | tee "$INPUT_DIR/real_normalize_http.txt")
+    
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by HTLM content in HTTP${endColour}\n"
 
-            #DEBUG
-            #echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP-http.txt"
+    for file in "$INPUT_DIR"/test_validation_http_*.html
+    do
+        if [ -f "$file" ]; then
+            # Extract the ip from the filename
+            filename=$(basename "$file")  # gets the filename without the path
+            local testIP=$(echo $filename | sed -E 's/test_validation_http_([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\.html/\1/')
+            local text2=$(read_and_normalize_html "$INPUT_DIR/$filename" | tee "$INPUT_DIR/test_normalize_http_$testIP.txt")
 
             local similarity=$(similarity_percentage "$text1" "$text2")
             if [[ $similarity -gt 75 ]]; then
                 echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
             fi
             echo "$testIP Similarity HTML content: $similarity%"
-        done
-        #DEBUG
-        rm -rf "$LOCATION/$DOMAIN/real_validation_content_http.txt" "$LOCATION/$DOMAIN/test_validation_content_http.txt"
-    fi
+
+        fi
+    done
+
+    #DEBUG
+    #rm -rf "$INPUT_DIR/real_normalize_http.txt" "$INPUT_DIR/test_normalize_http_*"
 }
 
 validation_content_https() {
 
-    curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-        -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" https://$DOMAIN > "$LOCATION/$DOMAIN/real_validation_content_https.txt"
-    local text1=$(read_and_normalize_html "$LOCATION/$DOMAIN/real_validation_content_https.txt")
+    if [ ! -s "$LOCATION/$DOMAIN/IP.txt" ]; then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}The list of IP to validate is empty${endColour}\n"
+        return 1
+    fi
+    local INPUT_DIR="$LOCATION/$DOMAIN/validation_https"
 
-    #DEBUG
-    #echo $text1 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_real_request_https.txt"
+    if [ ! -d "$INPUT_DIR" ];then
+        echo -e "\n${redColour}[*]${endColour}${grayColour}HTTPS validation failed (Empty original request)${endColour}\n"
+        return 1
+    fi
 
-    if [ -s "$LOCATION/$DOMAIN/real_validation_content_https.txt" ]; then
-        echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by content with redirects in https${endColour}\n"
-        for testIP in $(cat "$LOCATION/$DOMAIN/IP.txt" | sort | uniq);
-        do
-            curl --retry 1 -L -s -m 1 -k -X GET -H "$USER_AGENT" -H "$ACCEPT_HEADER" \
-                -H "$ACCEPT_LANGUAGE" -H "$CONNECTION_HEADER" --resolve *:443:$testIP \
-                https://$DOMAIN > "$LOCATION/$DOMAIN/test_validation_content_https.txt"
-            local text2=$(read_and_normalize_html "$LOCATION/$DOMAIN/test_validation_content_https.txt")
+    local text1=$(read_and_normalize_html "$INPUT_DIR/real_validation_https.html" | tee "$INPUT_DIR/real_normalize_https.txt")
+    
+    echo -e "\n${yellowColour}[*]${endColour}${grayColour} IP validation by HTLM content in HTTPS${endColour}\n"
 
-            #DEBUG
-            #echo $text2 > "$LOCATION/$DOMAIN/.logs/read_and_normalize_html_$testIP.txt" 
+    for file in "$INPUT_DIR"/test_validation_https_*.html
+    do
+        if [ -f "$file" ]; then
+            # Extrae la IP del nombre del archivo
+            filename=$(basename "$file")  # Obtiene solo el nombre del archivo, sin la ruta
+            local testIP=$(echo $filename | sed -E 's/test_validation_https_([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\.html/\1/')
+            local text2=$(read_and_normalize_html "$INPUT_DIR/$filename" | tee "$INPUT_DIR/test_normalize_https_$testIP.txt")
 
             local similarity=$(similarity_percentage "$text1" "$text2")
             if [[ $similarity -gt 75 ]]; then
                 echo $testIP >> "$LOCATION/$DOMAIN/IP_validate.tmp"
             fi
             echo "$testIP Similarity HTML content: $similarity%"
-        done
-        #DEBUG
-        rm -rf "$LOCATION/$DOMAIN/real_validation_content_https.txt" "$LOCATION/$DOMAIN/test_validation_content_https.txt"
-    fi
+
+        fi
+    done
+
+    #DEBUG
+    #rm -rf "$INPUT_DIR/real_normalize_https.txt" "$INPUT_DIR/test_normalize_https_*"
 }
 
 sort_and_uniq_IP_file(){
@@ -414,7 +505,7 @@ sort_and_uniq_IP_file(){
     if [ -s "$LOCATION/$DOMAIN/IP_validate.tmp" ]; then 
         cat "$LOCATION/$DOMAIN/IP_validate.tmp" | sort | uniq > "$LOCATION/$DOMAIN/IP_validate.txt"
         #DEBUG 
-        rm -rf "$LOCATION/$DOMAIN/IP_validate.tmp"
+        #rm -rf "$LOCATION/$DOMAIN/IP_validate.tmp"
     fi
 } 
 
@@ -436,7 +527,7 @@ show_validated_ip(){
         cat "$LOCATION/$DOMAIN/IP_validate.txt"
     else
         echo -e "\n${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
-        #exit 1
+        return 1
     fi
 } 
 
@@ -452,9 +543,11 @@ owner of the Autonomous System to which the IP belongs${endColour}\n"
         done
     else
         echo -e "\n${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
-        #exit 1
+        return 1
     fi
 } 
+
+################ VALIDATION CDN PART ###############################################################################
 
 cdn_validation_by_PTR_register(){
 
@@ -469,7 +562,7 @@ cdn_validation_by_PTR_register(){
     for cdn in "${cdns[@]}"; do
         if [[ $hostname == *"$cdn"* ]]; then
             is_cdn=true
-            echo "$IP CDN detected: $cdn"
+            echo "$IP CDN detected by PTR register: $cdn"
             break
         fi
     done
@@ -489,7 +582,7 @@ cdn_validation_by_whois(){
     for cdn in "${cdns[@]}"; do
         if [[ $whois == *"$cdn"* ]]; then
             is_cdn=true
-            echo "$IP CDN detected: $cdn"
+            echo "$IP CDN detected by whois: $cdn "
             break
         fi
     done
@@ -550,10 +643,11 @@ cdn_validation_by_headers_and_cookies_name(){
 
     # Print the result
     if [ -n "$detected_cdn" ]; then
-        echo "$IP CDN detected: $detected_cdn"
+        echo "$IP CDN detected by headers and cookies name: $detected_cdn"
     else
         echo -e "${greenColour}[!] $IP Potential CDN bypass${endColour}\n"
         echo "$IP" >> $results_file
+        echo "$IP" >> "$LOCATION/$DOMAIN/IP_Bypass.txt"
     fi
 
 }
@@ -578,10 +672,60 @@ cdn_validation(){
             fi
         done
     else
-        echo -e "\n${redColour}[*]${endColour}${grayColour}The validated IP list is empty${endColour}\n"
+        echo -e "\n${redColour}[*]${endColour}${grayColour} The validated IP list is empty${endColour}\n"
     fi
 }
 
+################ VALIDATION WAF PART ###############################################################################
+
+waf_detection_by_shodan(){
+
+    if [[ -z "$SHODAN_API" ]]; then
+        return 1
+    fi
+
+    local IP=$1
+
+    local request=$(curl --retry 1 -s -m 10 -X GET -H "Content-Type: application/json" -H "Host: $SHODAN_DOMAIN_API" \
+        -H "Referer: $SHODAN_URL_API" --url "$SHODAN_URL_API/shodan/host/$IP?key=$SHODAN_API" \
+        | jq | tee "${LOCATION}/${DOMAIN}/shodan_search_$IP.json")
+
+    local cdn=$(jq -r 'select(.tags[] | contains("cdn")).data[].isp' "${LOCATION}/${DOMAIN}/shodan_search_$IP.json" | sort | uniq)
+    local waf=$(jq -r '.data[].http.waf' "${LOCATION}/${DOMAIN}/shodan_search_$IP.json" | sort | uniq)
+
+    # Verify if waf is null or empty and manage it.
+    if [[ -z "$waf" || "$waf" == "null" ]]; then
+        return 0
+    else
+        echo $waf
+    fi
+}
+
+waf_validation(){
+
+    if [ -s "$LOCATION/$DOMAIN/IP_validate.txt" ]; then
+
+        echo -e "\n${yellowColour}[*]${endColour}${grayColour} Looking up the WAF in Shodan${endColour}\n"
+
+        for waf_search in $(cat "$LOCATION/$DOMAIN/IP_validate.txt" | sort | uniq); do
+            local waf_validation=$(waf_detection_by_shodan $waf_search)
+
+            # Print the result
+            if [ -n "$waf_validation" ]; then
+                echo "$waf_search WAF detected by shodan: $waf_validation"
+            else
+                echo -e "${greenColour}[!] $waf_search Potential WAF bypass by Shodan${endColour}"
+            fi
+
+        done
+
+    else
+        return 0
+    fi
+
+}
+
+################ MAIN PART ###############################################################################
 
 flag_domain() {
     DOMAIN="$1"
@@ -590,14 +734,16 @@ flag_domain() {
     banner
     get_dns_a_records
     virustotal_dns_history
-    validation_lines_http
+    shodan_search_IP_by_domain
+#    validation_lines_http
     validation_lines_https
-    validation_content_http
+#    validation_content_http
     validation_content_https
     sort_and_uniq_IP_file
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip
     cdn_validation
+    waf_validation
 }
 
 flag_intensive() {
@@ -608,6 +754,7 @@ flag_intensive() {
     get_dns_a_records_and_AS_owner
     virustotal_dns_history_intensive
     virustotal_certificates_history_intensive
+    shodan_search_IP_by_domain
     validation_lines_http  
     validation_lines_https
     validation_content_http
@@ -616,6 +763,7 @@ flag_intensive() {
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip_and_AS_owner
     cdn_validation
+    waf_validation
 }
 
 flag_censys(){
@@ -627,6 +775,7 @@ flag_censys(){
     virustotal_dns_history
     virustotal_certificates_history
     censys_search_IP_by_certificates
+    shodan_search_IP_by_domain
     validation_lines_http
     validation_lines_https
     validation_content_http
@@ -635,6 +784,7 @@ flag_censys(){
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip
     cdn_validation
+    waf_validation
 }
 
 flag_all(){
@@ -646,6 +796,7 @@ flag_all(){
     virustotal_dns_history_intensive
     virustotal_certificates_history_intensive
     censys_search_IP_by_certificates
+    shodan_search_IP_by_domain
     validation_lines_http
     validation_lines_https
     validation_content_http
@@ -654,14 +805,16 @@ flag_all(){
     remove_ips_from_file "$LOCATION/$DOMAIN/IP_validate.txt"
     show_validated_ip_and_AS_owner
     cdn_validation
+    waf_validation
 } 
 
 DOMAIN=''
 FLAG_INTENSIVE=false
 FLAG_CENSYS=false
 VERBOSE=0
+OUTPUT_FILE=""
 
-while getopts ':d:icf:h?' option
+while getopts ':d:icf:o:h?' option
 do
     case "${option}"
         in
@@ -669,6 +822,7 @@ do
         i) FLAG_INTENSIVE=true;;
         c) FLAG_CENSYS=true;;
         f) DOM_FILE=${OPTARG};;
+        o) OUTPUT_FILE=${OPTARG};;
         v) VERBOSE=1;;
         h|?) banner ; helpPanel ; exit 0;;
         *) banner ; echo -e "\nUnknown flag: -$OPTARG\n" 1>&2 ; usage;;
@@ -682,67 +836,131 @@ if [ -z "$DOMAIN" ] && [ -z "$DOM_FILE" ] ; then
 	exit 1
 fi
 
+
 # Main function to execute the search
 function main_logic(){
 
-    # File to store the results
-    timestamp="$(date +%F)"
-    if [ ! -d results ]; then
-        mkdir results
-    fi
-    results_file="results/results-$timestamp-$DOMAIN.txt"
+    if [ -n "$OUTPUT_FILE" ]; then # Check if -o flag was used to save all in a file.
+        { 
+            # File to store the results
+            timestamp="$(date +%F)"
+            if [ ! -d results ]; then
+                mkdir results
+            fi
+            results_file="results/results-$timestamp-$DOMAIN.txt"
 
-    # Store the domain in the results file
-    echo "Potential CDN Bypass for: $DOMAIN" >> $results_file
+            # Store the domain in the results file
+            echo "Potential CDN Bypass for: $DOMAIN" >> $results_file
 
-    TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
-    if [ ! -d scans ]; then
-        mkdir scans
-    fi
-    LOCATION="$(pwd)/scans"
-    SCAN_PATH="scans"
+            TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
+            if [ ! -d scans ]; then
+                mkdir scans
+            fi
+            LOCATION="$(pwd)/scans"
+            SCAN_PATH="scans"
 
-    if [ ! -d "$LOCATION/$DOMAIN" ];then
-        mkdir "$SCAN_PATH/$DOMAIN"
-    fi
-    if [ ! -d "$LOCATION/$DOMAIN/.logs" ];then
-        mkdir "$SCAN_PATH/$DOMAIN/.logs"
-    fi
-    
-    # If the domain does not have DNS resolution the script will jump the domain and continue with the next.
-    dns_a_records_check=$(dig +short A "$DOMAIN" @8.8.8.8)
-    if [ -z "$dns_a_records_check" ]; then
-    	banner
-    	echo -e "\n${redColour}[*]No resolution DNS found for $DOMAIN${endColour}\n"
-    	return
-    fi
+            if [ ! -d "$LOCATION/$DOMAIN" ];then
+                mkdir "$SCAN_PATH/$DOMAIN"
+            else
+                rm -rf "$LOCATION/$DOMAIN/*"
+            fi
+            
+            # If the domain does not have DNS resolution the script will jump the domain and continue with the next.
+            dns_a_records_check=$(dig +short A "$DOMAIN" @8.8.8.8)
+            if [ -z "$dns_a_records_check" ]; then
+                banner
+                echo -e "\n${redColour}[*]No resolution DNS found for $DOMAIN${endColour}\n"
+                return
+            fi
 
-    # Main logic
+            # Main logic
 
-    # the domain is always mandatory, and then there are 4 options, one that is only domain,
-    # one that is intense, one that is censys and one with both.
-    # It could be done with an If of the first and its two options inside then an else and the last option.
-    # OPTION1
-    if [ "$FLAG_INTENSIVE" = true ]; then
-      if [ "$FLAG_CENSYS" = true ]; then
-       # echo "Executing Option 1 and Option 2"
-        flag_all "$DOMAIN" "$LOCATION"
-      else
-       # echo "Executing Option 1 only"
-        flag_intensive "$DOMAIN" "$LOCATION"
-      fi
+            # the domain is always mandatory, and then there are 4 options, one that is only domain,
+            # one that is intense, one that is censys and one with both.
+            # It could be done with an If of the first and its two options inside then an else and the last option.
+            # OPTION1
+            if [ "$FLAG_INTENSIVE" = true ]; then
+            if [ "$FLAG_CENSYS" = true ]; then
+            # echo "Executing Option 1 and Option 2"
+                flag_all "$DOMAIN" "$LOCATION"
+            else
+            # echo "Executing Option 1 only"
+                flag_intensive "$DOMAIN" "$LOCATION"
+            fi
+            else
+            if [ "$FLAG_CENSYS" = true ]; then
+            # echo "Executing Option 2 only"
+                flag_censys "$DOMAIN" "$LOCATION"
+            else
+            # echo "No options selected"
+                flag_domain "$DOMAIN" "$LOCATION"
+            fi
+            fi
+            echo "" >> $results_file
+        } | tee -a "$OUTPUT_FILE"
     else
-      if [ "$FLAG_CENSYS" = true ]; then
-       # echo "Executing Option 2 only"
-        flag_censys "$DOMAIN" "$LOCATION"
-      else
-       # echo "No options selected"
-        flag_domain "$DOMAIN" "$LOCATION"
-      fi
-    fi
-    echo "" >> $results_file
-}
+        {
 
+            # File to store the results
+            timestamp="$(date +%F)"
+            if [ ! -d results ]; then
+                mkdir results
+            fi
+            results_file="results/results-$timestamp-$DOMAIN.txt"
+
+            # Store the domain in the results file
+            echo "Potential CDN Bypass for: $DOMAIN" >> $results_file
+
+            TOPDOMAIN=$(echo $DOMAIN | awk -F'.' '{print $(NF-1)"."$NF}')
+            if [ ! -d scans ]; then
+                mkdir scans
+            fi
+            LOCATION="$(pwd)/scans"
+            SCAN_PATH="scans"
+
+            if [ ! -d "$LOCATION/$DOMAIN" ];then
+                mkdir "$SCAN_PATH/$DOMAIN"
+            else
+                rm -rf "$LOCATION/$DOMAIN/*"
+            fi
+            
+            # If the domain does not have DNS resolution the script will jump the domain and continue with the next.
+            dns_a_records_check=$(dig +short A "$DOMAIN" @8.8.8.8)
+            if [ -z "$dns_a_records_check" ]; then
+                banner
+                echo -e "\n${redColour}[*]No resolution DNS found for $DOMAIN${endColour}\n"
+                return
+            fi
+
+            # Main logic
+
+            # the domain is always mandatory, and then there are 4 options, one that is only domain,
+            # one that is intense, one that is censys and one with both.
+            # It could be done with an If of the first and its two options inside then an else and the last option.
+            # OPTION1
+            if [ "$FLAG_INTENSIVE" = true ]; then
+            if [ "$FLAG_CENSYS" = true ]; then
+            # echo "Executing Option 1 and Option 2"
+                flag_all "$DOMAIN" "$LOCATION"
+            else
+            # echo "Executing Option 1 only"
+                flag_intensive "$DOMAIN" "$LOCATION"
+            fi
+            else
+            if [ "$FLAG_CENSYS" = true ]; then
+            # echo "Executing Option 2 only"
+                flag_censys "$DOMAIN" "$LOCATION"
+            else
+            # echo "No options selected"
+                flag_domain "$DOMAIN" "$LOCATION"
+            fi
+            fi
+            echo "" >> $results_file
+
+        }
+
+    fi
+}
 
 if [ -n "$DOMAIN" ];then
     main_logic $DOMAIN
