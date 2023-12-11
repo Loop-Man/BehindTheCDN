@@ -23,22 +23,24 @@ SHODAN_API="" # Shodan API key (https://developer.shodan.io/api/requirements)
 ```
 
 # Use
+## Add permissions to execute file
+`chmod u+x behindTheCDN.sh`
 ## Basic option
 The basic option allows you to search for a particular domain  
-`./behindCDN -d example.com` 
+`./behindTheCDN.sh -d example.com` 
 ## Intensive mode
 This option allows you to launch more queries and search by DNS history, ssl certificates  
-`./behindCDN -d example.com -i` 
+`./behindTheCDN.sh -d example.com -i` 
 ## Censys
 This option allows you to search using the censys API  
-`./behindCDN -d example.com -c` 
+`./behindTheCDN.sh -d example.com -c` 
 ## File
 This option allows you to indicate a file with domains to look for a possible bypass  
-`./behindCDN -f domains.txt` 
+`./behindTheCDN.sh -f domains.txt` 
 ## Combine
 All options can be combined and use it at the same time  
-`./behindCDN -d example.com -i -c`  
-`./behindCDN -f domains.txt -i -c`  
+`./behindTheCDN.sh -d example.com -i -c`  
+`./behindTheCDN.sh -f domains.txt -i -c`  
 
 # Results
 The script by default writes the output to a file with a timestamp in a folder called `results`
